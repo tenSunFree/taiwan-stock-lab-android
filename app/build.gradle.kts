@@ -4,22 +4,15 @@ plugins {
 
 android {
     namespace = "com.sun.taiwan_stock_lab_android"
-    compileSdk {
-        version = release(37) {
-            minorApiLevel = 1
-        }
-    }
-
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.sun.taiwan_stock_lab_android"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-
     buildTypes {
         release {
             optimization {
