@@ -1,28 +1,38 @@
 ## Summary
-<!-- 這個 PR 做了什麼？一兩句話說明 -->
--
+
+<!-- Briefly describe what this PR does in one or two sentences. -->
+
+*
 
 ## Changes
-<!-- 條列這個 PR 涉及的具體改動 -->
--
+
+<!-- List the specific changes included in this PR. -->
+
+*
 
 ## Architecture
-<!-- 若有新增/調整 module、dependency 方向，簡述一下 -->
--
+
+<!-- Describe any module additions, dependency changes, or architectural decisions. -->
+
+*
 
 ## Verification
-- [ ] `./gradlew clean`
-- [ ] `./gradlew test`
-- [ ] `./gradlew assembleDebug`
-- [ ] `./gradlew lint`
-- [ ] `./gradlew ktlintCheck` 
-- [ ] `./gradlew detekt` 
+
+* [ ] `./gradlew clean`
+* [ ] `./gradlew test`
+* [ ] `./gradlew assembleDebug`
+* [ ] `./gradlew lint`
+* [ ] `./gradlew ktlintCheck`
+* [ ] `./gradlew detekt`
 
 ## Screenshots / Recording
-<!-- UI 有變動時附上截圖或錄影 -->
+
+<!-- Attach screenshots or a screen recording if this PR includes UI changes. -->
 
 ## Notes
-<!-- 已知限制、之後要補的 follow-up、或這個 PR 特意不做的事 -->
+
+<!-- Add known limitations, follow-up work, or anything intentionally excluded from this PR. -->
 
 ## Related
-<!-- 對應到需求文件的哪個項目，或前一個 PR -->
+
+<!-- Reference the relevant requirement, issue, task, or previous PR. -->
