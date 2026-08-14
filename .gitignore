@@ -1,15 +1,23 @@
+# Gradle
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
+.gradle/
+build/
 /captures
 .externalNativeBuild
 .cxx
+
+# Local configuration (contains SDK path — never commit)
 local.properties
+
+# Android Studio / IntelliJ
+.idea/
+
+# macOS
+.DS_Store
+
+# Keystore files
+*.jks
+*.keystore
+
+# Log/profile files
+*.log
