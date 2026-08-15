@@ -30,5 +30,6 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(":app")
 include(":core:common")
+include(":core:network")
 include(":core:ui")
 include(":feature:stocklist")
