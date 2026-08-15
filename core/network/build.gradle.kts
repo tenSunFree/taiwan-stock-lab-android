@@ -1,10 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.ksp)
 }
 
 android {
-    namespace = "com.sun.taiwan_stock_lab_android.feature.stocklist"
+    namespace = "com.sun.taiwan_stock_lab_android.core.network"
     compileSdk = 37
     defaultConfig {
         minSdk = 24
@@ -16,8 +15,9 @@ android {
 }
 
 dependencies {
-    implementation(projects.core.common)
-    implementation(projects.core.network)
-    implementation(projects.core.ui)
-    ksp(libs.moshi.kotlin.codegen)
+    api(libs.retrofit.core)
+    api(libs.moshi.core)
+    implementation(libs.retrofit.converter.moshi)
+    implementation(libs.okhttp.core)
+    implementation(libs.okhttp.logging.interceptor)
 }
