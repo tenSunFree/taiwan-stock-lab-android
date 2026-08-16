@@ -15,9 +15,9 @@
 
 A Taiwan stock market Android app built on top of the [TWSE OpenAPI](https://openapi.twse.com.tw/), aggregating valuation, daily price, average-price, and trading data for listed stocks.
 
-The current implementation focuses on a production-oriented data foundation built with Kotlin, Clean Architecture, a multi-module Gradle setup, structured concurrency, an offline-first Room 3 persistence layer, and a Hilt-based dependency injection composition root.
+The current implementation focuses on a production-oriented data foundation built with Kotlin, Clean Architecture, a multi-module Gradle setup, structured concurrency, an offline-first Room 3 persistence layer, a Hilt-based dependency injection composition root, and a Hilt-injected presentation state layer using MVI-style Unidirectional Data Flow.
 
-The presentation layer is planned around MVVM with MVI-style Unidirectional Data Flow, using XML as the primary UI with selective Jetpack Compose interoperability.
+The remaining UI layer is planned using XML as the primary UI with selective Jetpack Compose interoperability.
 
 This repository is intended for learning, technical assessment, and engineering demonstration purposes.
 
@@ -47,11 +47,11 @@ This repository is intended for learning, technical assessment, and engineering 
 - Coroutine cancellation is propagated instead of being converted into `Result.failure`
 - Exported Room schema stored in version control
 - Application-level dependency injection composition root using Hilt, with core and feature modules kept independent of the DI framework
+- Screen-level presentation state managed with a Hilt-injected ViewModel, using `StateFlow` for persistent UI state and `SharedFlow` for one-off UI effects (MVI-style Unidirectional Data Flow)
 - JVM unit tests and Android instrumentation tests
 
 ### Planned
 
-- ViewModel with MVI-style `UiState`, `UiEvent`, and `UiEffect`
 - XML-based stock list screen
 - Sorting and filtering
 - Stock detail dialog
@@ -85,7 +85,7 @@ This repository is intended for learning, technical assessment, and engineering 
 - **`:core:common`** — Pure Kotlin/JVM module. Contains shared coroutine abstractions such as `DispatchersProvider`. Does not depend on Android or feature modules.
 - **`:core:network`** — Reusable networking infrastructure (Retrofit, OkHttp, Moshi, `NetworkClientFactory`). Contains no TWSE-specific feature logic.
 - **`:core:ui`** — Shared UI module scaffold. Reusable themes and UI components are planned as the presentation layer is implemented.
-- **`:feature:stocklist`** — Owns stock-list-specific data and domain logic: TWSE API contracts and DTOs, remote data source, Room persistence, domain model, repository implementation, and the future presentation layer.
+- **`:feature:stocklist`** — Owns stock-list-specific data, domain, and presentation logic: TWSE API contracts and DTOs, remote data source, Room persistence, domain model, repository implementation, and screen-level presentation state.
 
 Core modules never depend on feature modules. The domain layer has no knowledge of Retrofit, Room, or Android framework classes.
 
@@ -177,7 +177,34 @@ SingletonComponent
         └── StockRepositoryModule → TwseRemoteDataSource, StockRepository
 ```
 
-`core:*` and `feature:stocklist` classes contain no Hilt annotations or `@Inject` constructors. `:app` assembles the complete object graph through explicit `@Provides` modules, keeping the domain and data layers independent of the dependency injection framework.
+`core:*` and `feature:stocklist`'s `data`/`domain` classes contain no Hilt annotations or `@Inject` constructors. `:app` assembles the complete object graph through explicit `@Provides` modules, keeping the domain and data layers independent of the dependency injection framework. The presentation layer is the one exception — see below.
+
+### Presentation State
+
+`StockListViewModel` follows an MVI-style Unidirectional Data Flow contract:
+
+```text
+UI
+ │
+ │ UiEvent
+ ▼
+StockListViewModel
+ │
+ ├── StateFlow<StockListUiState>
+ │
+ └── SharedFlow<StockListUiEffect>
+ │
+ ▼
+StockRepository
+```
+
+The ViewModel does not consume remote data directly — `StockRepository.observeStocks()` remains the single source of screen data, so the presentation layer continues to follow the existing offline-first flow (TWSE → `refreshStocks()` → Room → `observeStocks()` → ViewModel → UI).
+
+`StockListViewModel` is intentionally Hilt-aware (`@HiltViewModel`) because it belongs to the Android presentation layer, which is already framework-coupled. The existing `data` and `domain` layers remain independent of Hilt.
+
+Initial remote refresh is triggered through an explicit `OnStart` event rather than the ViewModel constructor, so UI effect collectors are guaranteed to be active before a possible refresh error is emitted — `MutableSharedFlow` defaults to `replay = 0`, so an effect emitted before any collector subscribes would otherwise be silently dropped.
+
+ViewModel coroutines call repository suspend functions directly on `viewModelScope` without forcing a specific dispatcher — the underlying Retrofit and Room APIs already expose main-safe suspend functions, so the presentation layer doesn't need to guess an appropriate dispatcher for the data layer.
 
 ### Feature-Internal Layering
 
@@ -207,11 +234,18 @@ feature/stocklist/
 │       ├── OfflineFirstStockRepository.kt
 │       └── EmptyStockSnapshotException.kt
 │
-└── domain/
-    ├── model/
-    │   └── Stock.kt
-    └── repository/
-        └── StockRepository.kt
+├── domain/
+│   ├── model/
+│   │   └── Stock.kt
+│   └── repository/
+│       └── StockRepository.kt
+│
+└── presentation/
+    ├── StockListViewModel.kt
+    └── contract/
+        ├── StockListUiState.kt
+        ├── StockListUiEvent.kt
+        └── StockListUiEffect.kt
 ```
 
 ---
@@ -247,18 +281,25 @@ feature/stocklist/
 - Hilt 2.60.1
 - KSP code generation
 - Application-level composition root
-- Core and feature modules remain Hilt-independent
+- Data and domain layers remain Hilt-independent
+
+**Presentation**
+- MVVM
+- MVI-style Unidirectional Data Flow
+- `StateFlow` for persistent UI state
+- `SharedFlow` for one-off UI effects
+- Hilt-injected screen-level ViewModel (`@HiltViewModel`)
 
 **Testing**
 - JUnit 5
 - MockK
 - kotlinx-coroutines-test
+- Turbine
 - AndroidJUnit4 / AndroidX Test
 - Room in-memory database tests
 - Hilt instrumentation testing (`hilt-android-testing`, custom `HiltTestRunner`)
 
 **Planned**
-- StateFlow / SharedFlow
 - XML UI
 - Jetpack Compose interoperability
 - Espresso UI tests
@@ -290,6 +331,8 @@ src/androidTest/   Android runtime / integration tests
 
 **Dependency Injection** — `StockRepositoryInjectionTest` is an Android instrumentation test that verifies the production Hilt dependency graph resolves and injects `StockRepository`, including its transitive Retrofit, remote data source, Room database, and DAO dependencies.
 
+**Presentation State** — `StockListViewModelTest` covers cached-stock observation via `StateFlow`, `OnStart` triggering the initial refresh exactly once, explicit `OnRefresh` handling, refresh failure state and `ShowError` effect, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK, `kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
+
 Notable test names:
 
 ```text
@@ -298,6 +341,8 @@ refreshStocks_whenRemoteResultIsEmpty_keepsExistingCache
 merge_keepsStockWhenValuationDataIsMissing
 fetchSnapshot_fetchesAllEndpointsConcurrently
 stockRepository_isInjectedSuccessfully
+OnStart_triggersRefreshOnlyOnce
+knownStockClick_emitsShowStockDetail
 ```
 
 ---
@@ -323,8 +368,8 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 | Persistence | Room 3, DAO, schema export | ✅ Done |
 | Offline-first repository | Room source of truth, refresh/cache policy | ✅ Done |
 | Dependency injection | Hilt composition root | ✅ Done |
-| Presentation state | ViewModel + MVI-style UDF | ⏳ Next |
-| XML UI | Stock list, sorting/filtering, detail dialog | ⏳ Planned |
+| Presentation state | ViewModel + MVI-style UDF | ✅ Done |
+| XML UI | Stock list, sorting/filtering, detail dialog | ⏳ Next |
 | Compose interoperability | `ComposeView` custom components | ⏳ Planned |
 | Quality tooling | ktlint, detekt, CI | ⏳ Planned |
 | Observability | Crashlytics, LeakCanary | ⏳ Planned |
@@ -432,10 +477,12 @@ taiwan-stock-lab-android/
 │           │   │   ├── remote/
 │           │   │   ├── mapper/
 │           │   │   └── repository/
-│           │   │
-│           │   └── domain/
-│           │       ├── model/
-│           │       └── repository/
+│           │   ├── domain/
+│           │   │   ├── model/
+│           │   │   └── repository/
+│           │   └── presentation/
+│           │       ├── StockListViewModel.kt
+│           │       └── contract/
 │           │
 │           ├── test/kotlin/
 │           └── androidTest/kotlin/
@@ -475,6 +522,7 @@ This project demonstrates Android engineering practices such as:
 - defensive API parsing
 - offline-first persistence
 - dependency injection composition
+- MVI-style unidirectional presentation state
 - reactive data flow
 - automated testing
 - incremental delivery through reviewable Pull Requests
