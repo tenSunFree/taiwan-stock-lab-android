@@ -27,6 +27,13 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class StockListViewModelTest {
 
+    private val sampleStock2330 = Stock(
+        code = "2330", name = "台積電",
+        openingPrice = null, highestPrice = null, lowestPrice = null, closingPrice = null,
+        monthlyAveragePrice = null, change = null, tradeVolume = null, tradeValue = null,
+        transactionCount = null, peRatio = null, dividendYield = null, pbRatio = null,
+    )
+    private val sampleStock0050 = sampleStock2330.copy(code = "0050", name = "元大台灣50")
     private val testDispatcher = StandardTestDispatcher()
 
     @BeforeEach
@@ -90,6 +97,7 @@ class StockListViewModelTest {
     fun `refresh failure updates state and emits ShowError`() = runTest(testDispatcher) {
         val repository = mockk<StockRepository> {
             every { observeStocks() } returns flowOf(emptyList())
+            every { observeLastRefreshedAt() } returns flowOf(null)
             coEvery { refreshStocks() } returns Result.failure(RuntimeException("Network failure"))
         }
         val viewModel = StockListViewModel(repository)
@@ -130,18 +138,32 @@ class StockListViewModelTest {
         }
     }
 
-    private fun createRepository(stocks: List<Stock> = emptyList()): StockRepository =
+    private fun createRepository(
+        stocks: List<Stock> = emptyList(),
+        lastRefreshedAt: Long? = null,
+    ): StockRepository =
         mockk {
             every { observeStocks() } returns flowOf(stocks)
+            every { observeLastRefreshedAt() } returns flowOf(lastRefreshedAt)
             coEvery { refreshStocks() } returns Result.success(Unit)
         }
 
-    private val sampleStock2330 = Stock(
-        code = "2330", name = "台積電",
-        openingPrice = null, highestPrice = null, lowestPrice = null, closingPrice = null,
-        monthlyAveragePrice = null, change = null, tradeVolume = null, tradeValue = null,
-        transactionCount = null, peRatio = null, dividendYield = null, pbRatio = null,
-    )
+    @Test
+    fun `hasLoadedCache becomes true after local source emits even when cache is empty`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = emptyList())
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            assertEquals(true, viewModel.uiState.value.hasLoadedCache)
+            assertEquals(emptyList<Any>(), viewModel.uiState.value.stocks)
+        }
 
-    private val sampleStock0050 = sampleStock2330.copy(code = "0050", name = "元大台灣50")
+    @Test
+    fun `last refreshed timestamp is exposed through ui state`() = runTest(testDispatcher) {
+        val timestamp = 1_700_000_000_000L
+        val repository = createRepository(lastRefreshedAt = timestamp)
+        val viewModel = StockListViewModel(repository)
+        advanceUntilIdle()
+        assertEquals(timestamp, viewModel.uiState.value.lastUpdatedAt)
+    }
 }

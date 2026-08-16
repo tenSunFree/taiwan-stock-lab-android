@@ -40,12 +40,16 @@ This repository is intended for learning, technical assessment, and engineering 
 - Missing-value normalization for `"-"`, `"--"`, `"---"`, empty strings, and invalid numeric input
 - Domain numeric representation using nullable `BigDecimal` and `Long`
 - Room 3 offline-first persistence, with the local database as the single source of truth
+- Local Room access encapsulated behind `StockLocalDataSource`, mirroring `TwseRemoteDataSource` on the remote side
 - Reactive local observation through `Flow<List<Stock>>`
 - Network refresh writes into Room instead of returning remote data directly to consumers
 - Failed refreshes and empty/invalid remote snapshots preserve the existing cache
 - Coroutine cancellation is propagated instead of being converted into `Result.failure`
+- Last successful refresh timestamp persisted transactionally alongside the stock cache, surfaced in the UI as "最後更新：MM/dd HH:mm"
+- UI state distinguishes "local cache not yet loaded" from "loaded but empty", preventing the empty-state text from flashing before the initial Room query completes
 - Exported Room schema stored in version control
-- Application-level dependency injection composition root using Hilt, with core and data/domain layers kept independent of the DI framework
+- Explicit Room schema migration (v1 → v2) preserving existing cached data, with a `MigrationTestHelper` test verifying it
+- Application-level dependency injection composition root using Hilt, organized by responsibility (network, database, repository) rather than by layer, with core and data/domain layers kept independent of the DI framework
 - Screen-level presentation state managed with a Hilt-injected ViewModel, using `StateFlow` for persistent UI state and `SharedFlow` for one-off UI effects (MVI-style Unidirectional Data Flow)
 - XML-based stock list screen with `RecyclerView`, `ListAdapter`/`DiffUtil`, and `SwipeRefreshLayout`
 - Presentation-layer price coloring: closing price above/below the monthly average, and positive/negative daily change, each mapped to red/green following Taiwan stock-market convention
@@ -135,6 +139,9 @@ StockMapper
 OfflineFirstStockRepository
    │
    ▼
+StockLocalDataSource
+   │
+   ▼
 StockDao
    │
    ▼
@@ -151,15 +158,17 @@ Flow<List<Stock>>
 presentation layer
 ```
 
-Room is the single source of truth. The repository exposes two distinct operations:
+Room is the single source of truth. The repository exposes three operations:
 
 ```kotlin
 fun observeStocks(): Flow<List<Stock>>
 
+fun observeLastRefreshedAt(): Flow<Long?>
+
 suspend fun refreshStocks(): Result<Unit>
 ```
 
-A failed network request or an empty/invalid remote snapshot does not overwrite the existing local cache.
+A failed network request or an empty/invalid remote snapshot does not overwrite the existing local cache. `observeLastRefreshedAt()` is backed by a single-row `refresh_metadata` table written in the same Room transaction as the stock cache replacement — the cache and its "last updated" timestamp can never drift out of sync.
 
 ### Dependency Injection
 
@@ -173,10 +182,10 @@ SingletonComponent
         │
         ├── TwseNetworkModule     → Retrofit, TwseApiService
         ├── DatabaseModule        → StockDatabase, StockDao
-        └── StockRepositoryModule → TwseRemoteDataSource, StockRepository
+        └── StockRepositoryModule → TwseRemoteDataSource, StockLocalDataSource, StockRepository
 ```
 
-`core:*` and `feature:stocklist`'s `data`/`domain` classes contain no Hilt annotations or `@Inject` constructors. `:app` assembles the complete object graph through explicit `@Provides` modules. The presentation layer (`StockListViewModel`) is the one exception — see below.
+`core:*` and `feature:stocklist`'s `data`/`domain` classes contain no Hilt annotations or `@Inject` constructors. `:app` assembles the complete object graph through explicit `@Provides` modules, organized by responsibility rather than by layer: `DatabaseModule` only provides Room-specific types (`StockDatabase`, `StockDao`), while `StockRepositoryModule` provides both data sources (`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them. The presentation layer (`StockListViewModel`) is the one exception to the "no Hilt in feature classes" rule — see below.
 
 ### Presentation State
 
@@ -203,6 +212,8 @@ Initial remote refresh is triggered through an explicit `OnStart` event rather t
 
 ViewModel coroutines call repository suspend functions directly on `viewModelScope` without forcing a specific dispatcher — the underlying Retrofit and Room APIs already expose main-safe suspend functions.
 
+`StockListUiState.hasLoadedCache` distinguishes "the local Room query hasn't emitted yet" from "it emitted an empty result" — without this, the UI briefly showed the empty-state text before the initial cache arrived, since a default/empty state was indistinguishable from a confirmed-empty cache.
+
 ### UI
 
 The stock list screen is `RecyclerView`-based, hosted by `MainActivity` (`@AndroidEntryPoint`, `by viewModels()`):
@@ -210,6 +221,7 @@ The stock list screen is `RecyclerView`-based, hosted by `MainActivity` (`@Andro
 ```text
 MainActivity
  ├── MaterialToolbar (sort action)
+ ├── "最後更新：..." timestamp label
  ├── SwipeRefreshLayout
  │      └── RecyclerView (StockListAdapter / ListAdapter + DiffUtil)
  ├── BottomSheetDialog (sort direction)
@@ -228,6 +240,12 @@ MainActivity
 feature/stocklist/
 ├── data/
 │   ├── local/
+│   │   ├── dao/
+│   │   ├── entity/
+│   │   ├── StockDatabase.kt
+│   │   ├── StockDatabaseFactory.kt
+│   │   ├── StockDatabaseMigrations.kt
+│   │   └── StockLocalDataSource.kt
 │   ├── remote/
 │   ├── mapper/
 │   └── repository/
@@ -282,11 +300,12 @@ feature/stocklist/
 - Room Gradle Plugin
 - `BundledSQLiteDriver`
 - Exported and version-controlled Room schemas
+- Explicit schema migrations (`Migration` + `MigrationTestHelper`)
 
 **Dependency Injection**
 - Hilt 2.60.1
 - KSP code generation
-- Application-level composition root
+- Application-level composition root, modules organized by responsibility (network, database, repository)
 - Data and domain layers remain Hilt-independent
 
 **Presentation**
@@ -310,6 +329,7 @@ feature/stocklist/
 - Turbine
 - AndroidJUnit4 / AndroidX Test
 - Room in-memory database tests
+- Room `MigrationTestHelper`
 - Hilt instrumentation testing (`hilt-android-testing`, custom `HiltTestRunner`)
 
 **Planned**
@@ -337,13 +357,15 @@ src/androidTest/   Android runtime / integration tests
 
 **Structured Concurrency** — `TwseRemoteDataSourceTest` verifies that three mocked endpoint calls, each delayed by one virtual second, complete in approximately one virtual second rather than three.
 
-**Offline-First Repository** — `OfflineFirstStockRepositoryTest` covers reading cached stocks, successful remote refresh into Room, preserving cache after network failure/empty snapshot, and propagating `CancellationException`.
+**Offline-First Repository** — `OfflineFirstStockRepositoryTest` covers reading cached stocks via `StockLocalDataSource`, reading/writing the last-refreshed timestamp, successful remote refresh, preserving cache after network failure/empty snapshot, and propagating `CancellationException`.
 
-**Room DAO** — `StockDaoTest` is an Android instrumentation test using a real in-memory Room database with `BundledSQLiteDriver`.
+**Room DAO** — `StockDaoTest` is an Android instrumentation test using a real in-memory Room database with `BundledSQLiteDriver`, covering atomic stock+metadata replacement.
+
+**Room Migration** — `StockDatabaseMigrationTest` uses Room's `MigrationTestHelper` to verify `MIGRATION_1_2` preserves existing stock rows and correctly adds the `refresh_metadata` table.
 
 **Dependency Injection** — `StockRepositoryInjectionTest` is an Android instrumentation test verifying the production Hilt dependency graph resolves and injects `StockRepository`.
 
-**Presentation State** — `StockListViewModelTest` covers cached-stock observation, `OnStart` triggering the initial refresh exactly once, explicit `OnRefresh`, sort-direction changes, refresh failure state/effect, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK, `kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
+**Presentation State** — `StockListViewModelTest` covers cached-stock observation, `hasLoadedCache` becoming true even for an empty cache, `OnStart` triggering the initial refresh exactly once, explicit `OnRefresh`, sort-direction changes, refresh failure state/effect, last-refreshed timestamp exposure, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK, `kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
 
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below monthly average), change-direction classification (positive/negative), null-value placeholders, thousands-separator formatting, and the `+`/`-` sign on the change value.
 
@@ -359,6 +381,8 @@ OnStart_triggersRefreshOnlyOnce
 knownStockClick_emitsShowStockDetail
 closingAboveMonthlyAverage_isMarkedAboveAverage
 positiveChange_includesPlusSign
+replaceAll_writesRefreshMetadataAlongsideStocks
+migrate1To2_preservesExistingStocksAndAddsMetadataTable
 ```
 
 ---
@@ -386,10 +410,12 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 | Dependency injection | Hilt composition root | ✅ Done |
 | Presentation state | ViewModel + MVI-style UDF | ✅ Done |
 | XML UI | Stock list, sorting, detail dialog | ✅ Done |
+| Cache metadata | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done |
 | Compose interoperability | `ComposeView` custom components | ⏳ Next |
 | Quality tooling | ktlint, detekt, CI | ⏳ Planned |
 | Observability | Crashlytics, LeakCanary | ⏳ Planned |
 | Polish | Dark mode, rotation verification, animations | ⏳ Planned |
+| Scaling | Paging 3 for the stock list, if dataset size grows significantly | ⏳ Future |
 
 ---
 
@@ -433,7 +459,7 @@ Run stock-list unit tests:
 ./gradlew :feature:stocklist:testDebugUnitTest
 ```
 
-Run Room instrumentation tests (requires a running emulator or physical device):
+Run Room instrumentation tests, including the schema migration test (requires a running emulator or physical device):
 ```bash
 ./gradlew :feature:stocklist:connectedDebugAndroidTest
 ```
@@ -498,12 +524,24 @@ taiwan-stock-lab-android/
 ├── feature/
 │   └── stocklist/
 │       ├── schemas/
-│       │   └── .../1.json
+│       │   └── .../
+│       │       ├── 1.json
+│       │       └── 2.json
 │       │
 │       └── src/
 │           ├── main/
 │           │   ├── kotlin/.../feature/stocklist/
 │           │   │   ├── data/
+│           │   │   │   ├── local/
+│           │   │   │   │   ├── dao/
+│           │   │   │   │   ├── entity/
+│           │   │   │   │   ├── StockDatabase.kt
+│           │   │   │   │   ├── StockDatabaseFactory.kt
+│           │   │   │   │   ├── StockDatabaseMigrations.kt
+│           │   │   │   │   └── StockLocalDataSource.kt
+│           │   │   │   ├── remote/
+│           │   │   │   ├── mapper/
+│           │   │   │   └── repository/
 │           │   │   ├── domain/
 │           │   │   └── presentation/
 │           │   │       ├── StockListViewModel.kt
@@ -516,7 +554,10 @@ taiwan-stock-lab-android/
 │           │       └── values/strings.xml
 │           │
 │           ├── test/kotlin/
-│           └── androidTest/kotlin/
+│           └── androidTest/
+│               └── kotlin/.../data/local/
+│                   ├── StockDaoTest.kt
+│                   └── StockDatabaseMigrationTest.kt
 │
 ├── gradle/
 │   ├── libs.versions.toml
@@ -556,6 +597,7 @@ This project demonstrates Android engineering practices such as:
 - MVI-style unidirectional presentation state
 - presentation-layer business-rule mapping (price coloring, formatting)
 - reactive data flow
+- database schema evolution with migration testing
 - automated testing
 - incremental delivery through reviewable Pull Requests
 

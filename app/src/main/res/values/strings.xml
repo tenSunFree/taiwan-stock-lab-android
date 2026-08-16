@@ -9,4 +9,6 @@
     <string name="stock_detail_dividend_yield">殖利率(%%)：%1$s</string>
     <string name="stock_detail_pb_ratio">股價淨值比：%1$s</string>
     <string name="empty_stock_list">尚無股票資料</string>
+    <string name="last_updated_format">最後更新：%1$s</string>
+    <string name="last_updated_unknown">尚未更新過</string>
 </resources>
