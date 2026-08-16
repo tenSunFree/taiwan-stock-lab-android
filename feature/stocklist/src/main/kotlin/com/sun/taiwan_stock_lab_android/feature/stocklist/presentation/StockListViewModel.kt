@@ -2,10 +2,13 @@ package com.sun.taiwan_stock_lab_android.feature.stocklist.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.Stock
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.repository.StockRepository
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiState
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.toUiModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,6 +34,7 @@ class StockListViewModel @Inject constructor(
 
     private var hasStarted = false
     private var refreshJob: Job? = null
+    private var latestStocks: List<Stock> = emptyList()
 
     init {
         observeStocks()
@@ -41,15 +45,30 @@ class StockListViewModel @Inject constructor(
             StockListUiEvent.OnStart -> onStart()
             StockListUiEvent.OnRefresh -> refresh()
             is StockListUiEvent.OnStockClicked -> onStockClicked(event.stockCode)
+            is StockListUiEvent.OnSortDirectionSelected -> onSortDirectionSelected(event.direction)
         }
     }
 
     private fun observeStocks() {
         viewModelScope.launch {
             stockRepository.observeStocks().collect { stocks ->
-                _uiState.update { it.copy(stocks = stocks) }
+                latestStocks = stocks
+                applySort()
             }
         }
+    }
+
+    private fun applySort() {
+        val direction = _uiState.value.sortDirection
+        val sorted = latestStocks.sortedBy { it.code }
+            .let { if (direction == SortDirection.DESCENDING) it.reversed() else it }
+        _uiState.update { it.copy(stocks = sorted.map { stock -> stock.toUiModel() }) }
+    }
+
+    private fun onSortDirectionSelected(direction: SortDirection) {
+        if (direction == _uiState.value.sortDirection) return
+        _uiState.update { it.copy(sortDirection = direction) }
+        applySort()
     }
 
     private fun onStart() {
@@ -60,10 +79,8 @@ class StockListViewModel @Inject constructor(
 
     private fun refresh() {
         if (refreshJob?.isActive == true) return
-
         refreshJob = viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
-
             stockRepository.refreshStocks()
                 .onSuccess {
                     _uiState.update { it.copy(isRefreshing = false) }
@@ -77,9 +94,9 @@ class StockListViewModel @Inject constructor(
     }
 
     private fun onStockClicked(stockCode: String) {
-        val stock = _uiState.value.stocks.find { it.code == stockCode } ?: return
+        val stock = latestStocks.find { it.code == stockCode } ?: return
         viewModelScope.launch {
-            _uiEffect.emit(StockListUiEffect.ShowStockDetail(stock))
+            _uiEffect.emit(StockListUiEffect.ShowStockDetail(stock.toUiModel()))
         }
     }
 

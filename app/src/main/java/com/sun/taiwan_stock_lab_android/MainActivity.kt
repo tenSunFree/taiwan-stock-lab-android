@@ -2,19 +2,145 @@ package com.sun.taiwan_stock_lab_android
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import com.sun.taiwan_stock_lab_android.databinding.ActivityMainBinding
+import com.sun.taiwan_stock_lab_android.databinding.BottomSheetSortBinding
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockListAdapter
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiState
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.StockUiModel
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private val viewModel: StockListViewModel by viewModels()
+    private lateinit var adapter: StockListAdapter
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContentView(R.layout.activity_main)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        setupWindowInsets()
+        setupToolbar()
+        setupRecyclerView()
+        setupSwipeRefresh()
+        observeViewModel()
+        viewModel.onEvent(StockListUiEvent.OnStart)
+    }
+
+    private fun setupWindowInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.main) { _, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            binding.appBarLayout.updatePadding(top = systemBars.top)
+            binding.swipeRefresh.updatePadding(bottom = systemBars.bottom)
             insets
         }
+    }
+
+    private fun setupToolbar() {
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_sort) {
+                showSortBottomSheet()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun setupRecyclerView() {
+        adapter = StockListAdapter { stockCode ->
+            viewModel.onEvent(StockListUiEvent.OnStockClicked(stockCode))
+        }
+        binding.recyclerViewStocks.apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = this@MainActivity.adapter
+            setHasFixedSize(true)
+        }
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefresh.setOnRefreshListener {
+            viewModel.onEvent(StockListUiEvent.OnRefresh)
+        }
+    }
+
+    private fun observeViewModel() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.uiState.collect { state -> renderState(state) }
+                }
+                launch {
+                    viewModel.uiEffect.collect { effect -> handleEffect(effect) }
+                }
+            }
+        }
+    }
+
+    private fun renderState(state: StockListUiState) {
+        adapter.submitList(state.stocks)
+        binding.swipeRefresh.isRefreshing = state.isRefreshing
+        binding.progressInitial.isVisible = state.stocks.isEmpty() && state.isRefreshing
+        binding.textEmpty.isVisible = state.stocks.isEmpty() && !state.isRefreshing
+    }
+
+    private fun handleEffect(effect: StockListUiEffect) {
+        when (effect) {
+            is StockListUiEffect.ShowStockDetail -> showStockDetailDialog(effect.stock)
+            is StockListUiEffect.ShowError -> showError(effect.message)
+        }
+    }
+
+    private fun showSortBottomSheet() {
+        val dialog = BottomSheetDialog(this)
+        val sheetBinding = BottomSheetSortBinding.inflate(layoutInflater)
+        sheetBinding.textSortDescending.setOnClickListener {
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
+            dialog.dismiss()
+        }
+        sheetBinding.textSortAscending.setOnClickListener {
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
+            dialog.dismiss()
+        }
+        dialog.setContentView(sheetBinding.root)
+        dialog.show()
+    }
+
+    private fun showStockDetailDialog(stock: StockUiModel) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.stock_detail_title, stock.name, stock.code))
+            .setMessage(
+                listOf(
+                    getString(R.string.stock_detail_pe_ratio, stock.peRatio),
+                    getString(R.string.stock_detail_dividend_yield, stock.dividendYield),
+                    getString(R.string.stock_detail_pb_ratio, stock.pbRatio),
+                ).joinToString("\n"),
+            )
+            .setPositiveButton(R.string.dialog_confirm, null)
+            .show()
+    }
+
+    private fun showError(message: String) {
+        Snackbar.make(binding.recyclerViewStocks, message, Snackbar.LENGTH_LONG).show()
     }
 }

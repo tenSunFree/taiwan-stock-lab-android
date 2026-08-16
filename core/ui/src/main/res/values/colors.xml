@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Taiwan stock-market convention: rise = red, fall = green -->
+    <color name="stock_price_up">#D32F2F</color>
+    <color name="stock_price_down">#2E7D32</color>
+    <color name="stock_card_background">#FFF7FF</color>
+</resources>
