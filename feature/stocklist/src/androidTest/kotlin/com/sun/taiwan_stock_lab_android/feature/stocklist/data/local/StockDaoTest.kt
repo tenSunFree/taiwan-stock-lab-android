@@ -36,11 +36,9 @@ class StockDaoTest {
 
     @Test
     fun replaceAll_clearsPreviousDataAndInsertsNew() = runBlocking {
-        dao.replaceAll(listOf(sampleEntity("2330")))
-        dao.replaceAll(listOf(sampleEntity("0050")))
-
+        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 1L)
+        dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 2L)
         val stocks = dao.observeAll().first()
-
         assertEquals(1, stocks.size)
         assertEquals("0050", stocks.single().code)
     }
@@ -50,6 +48,24 @@ class StockDaoTest {
         dao.insertAll(listOf(sampleEntity("2330"), sampleEntity("0050"), sampleEntity("1101")))
         val stocks = dao.observeAll().first()
         assertEquals(listOf("0050", "1101", "2330"), stocks.map { it.code })
+    }
+
+    @Test
+    fun replaceAll_writesRefreshMetadataAlongsideStocks() = runBlocking {
+        val refreshedAt = 1_700_000_000_000L
+        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = refreshedAt)
+        val metadata = dao.observeRefreshMetadata().first()
+        assertEquals(refreshedAt, metadata?.lastSuccessfulRefreshAt)
+    }
+
+    @Test
+    fun replaceAll_replacesStocksAndRefreshMetadataTogether() = runBlocking {
+        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 100L)
+        dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 200L)
+        val stocks = dao.observeAll().first()
+        val metadata = dao.observeRefreshMetadata().first()
+        assertEquals(listOf("0050"), stocks.map { it.code })
+        assertEquals(200L, metadata?.lastSuccessfulRefreshAt)
     }
 
     private fun sampleEntity(code: String) = StockEntity(

@@ -1,5 +1,6 @@
 package com.sun.taiwan_stock_lab_android.di
 
+import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.StockLocalDataSource
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.dao.StockDao
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.TwseRemoteDataSource
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.api.TwseApiService
@@ -22,8 +23,13 @@ object StockRepositoryModule {
 
     @Provides
     @Singleton
+    fun provideStockLocalDataSource(stockDao: StockDao): StockLocalDataSource =
+        StockLocalDataSource(stockDao)
+
+    @Provides
+    @Singleton
     fun provideStockRepository(
         remoteDataSource: TwseRemoteDataSource,
-        stockDao: StockDao,
-    ): StockRepository = OfflineFirstStockRepository(remoteDataSource, stockDao)
+        localDataSource: StockLocalDataSource,
+    ): StockRepository = OfflineFirstStockRepository(remoteDataSource, localDataSource)
 }

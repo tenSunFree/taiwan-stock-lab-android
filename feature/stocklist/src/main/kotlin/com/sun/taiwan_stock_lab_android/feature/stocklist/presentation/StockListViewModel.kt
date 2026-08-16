@@ -26,6 +26,10 @@ class StockListViewModel @Inject constructor(
     private val stockRepository: StockRepository,
 ) : ViewModel() {
 
+    private companion object {
+        const val DEFAULT_REFRESH_ERROR_MESSAGE = "Unable to refresh stock data."
+    }
+
     private val _uiState = MutableStateFlow(StockListUiState())
     val uiState: StateFlow<StockListUiState> = _uiState.asStateFlow()
 
@@ -38,6 +42,15 @@ class StockListViewModel @Inject constructor(
 
     init {
         observeStocks()
+        observeLastRefreshedAt()
+    }
+
+    private fun observeLastRefreshedAt() {
+        viewModelScope.launch {
+            stockRepository.observeLastRefreshedAt().collect { timestamp ->
+                _uiState.update { it.copy(lastUpdatedAt = timestamp) }
+            }
+        }
     }
 
     fun onEvent(event: StockListUiEvent) {
@@ -53,6 +66,7 @@ class StockListViewModel @Inject constructor(
         viewModelScope.launch {
             stockRepository.observeStocks().collect { stocks ->
                 latestStocks = stocks
+                _uiState.update { it.copy(hasLoadedCache = true) }
                 applySort()
             }
         }
@@ -98,9 +112,5 @@ class StockListViewModel @Inject constructor(
         viewModelScope.launch {
             _uiEffect.emit(StockListUiEffect.ShowStockDetail(stock.toUiModel()))
         }
-    }
-
-    private companion object {
-        const val DEFAULT_REFRESH_ERROR_MESSAGE = "Unable to refresh stock data."
     }
 }

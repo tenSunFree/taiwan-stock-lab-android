@@ -26,6 +26,9 @@ import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.StockUiModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val viewModel: StockListViewModel by viewModels()
     private lateinit var adapter: StockListAdapter
+    private val timeFormatter = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,9 +103,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderState(state: StockListUiState) {
         adapter.submitList(state.stocks)
-        binding.swipeRefresh.isRefreshing = state.isRefreshing
-        binding.progressInitial.isVisible = state.stocks.isEmpty() && state.isRefreshing
-        binding.textEmpty.isVisible = state.stocks.isEmpty() && !state.isRefreshing
+        binding.swipeRefresh.isRefreshing =
+            state.hasLoadedCache && state.stocks.isNotEmpty() && state.isRefreshing
+        val isInitialLoading =
+            !state.hasLoadedCache || (state.stocks.isEmpty() && state.isRefreshing)
+        binding.progressInitial.isVisible = isInitialLoading
+        binding.textEmpty.isVisible =
+            state.hasLoadedCache && state.stocks.isEmpty() && !state.isRefreshing
+        binding.textLastUpdated.text = state.lastUpdatedAt
+            ?.let { timeFormatter.format(Date(it)) }
+            ?.let { getString(R.string.last_updated_format, it) }
+            ?: getString(R.string.last_updated_unknown)
     }
 
     private fun handleEffect(effect: StockListUiEffect) {
