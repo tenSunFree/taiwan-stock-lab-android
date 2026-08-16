@@ -11,6 +11,9 @@ android {
     defaultConfig {
         minSdk = 24
     }
+    buildFeatures {
+        viewBinding = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -24,13 +27,15 @@ room3 {
 dependencies {
     implementation(projects.core.common)
     implementation(projects.core.network)
-    implementation(projects.core.ui)
     api(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
     ksp(libs.androidx.room3.compiler)
     ksp(libs.moshi.kotlin.codegen)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.hilt.android)
+    implementation(libs.material)
+    implementation(projects.core.ui)  // 顏色資源
+    implementation(libs.androidx.recyclerview)
     ksp(libs.hilt.compiler)
     testImplementation(libs.junit5.jupiter.api)
     testImplementation(libs.junit5.jupiter.params)

@@ -3,8 +3,10 @@ package com.sun.taiwan_stock_lab_android.feature.stocklist.presentation
 import app.cash.turbine.test
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.Stock
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.repository.StockRepository
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.toUiModel
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -39,10 +41,29 @@ class StockListViewModelTest {
 
     @Test
     fun `cached stocks are exposed through ui state`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock))
+        val repository = createRepository(stocks = listOf(sampleStock2330))
         val viewModel = StockListViewModel(repository)
         advanceUntilIdle()
-        assertEquals(listOf(sampleStock), viewModel.uiState.value.stocks)
+        assertEquals(listOf(sampleStock2330.toUiModel()), viewModel.uiState.value.stocks)
+    }
+
+    @Test
+    fun `default sort direction is descending by code`() = runTest(testDispatcher) {
+        val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
+        val viewModel = StockListViewModel(repository)
+        advanceUntilIdle()
+        assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
+        assertEquals(listOf("2330", "0050"), viewModel.uiState.value.stocks.map { it.code })
+    }
+
+    @Test
+    fun `selecting ascending sort reorders stocks by code`() = runTest(testDispatcher) {
+        val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
+        val viewModel = StockListViewModel(repository)
+        advanceUntilIdle()
+        viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
+        advanceUntilIdle()
+        assertEquals(listOf("0050", "2330"), viewModel.uiState.value.stocks.map { it.code })
     }
 
     @Test
@@ -84,19 +105,22 @@ class StockListViewModelTest {
 
     @Test
     fun `known stock click emits ShowStockDetail`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock))
+        val repository = createRepository(stocks = listOf(sampleStock2330))
         val viewModel = StockListViewModel(repository)
         advanceUntilIdle()
         viewModel.uiEffect.test {
             viewModel.onEvent(StockListUiEvent.OnStockClicked("2330"))
-            assertEquals(StockListUiEffect.ShowStockDetail(sampleStock), awaitItem())
+            assertEquals(
+                StockListUiEffect.ShowStockDetail(sampleStock2330.toUiModel()),
+                awaitItem()
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
     fun `unknown stock click emits nothing`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock))
+        val repository = createRepository(stocks = listOf(sampleStock2330))
         val viewModel = StockListViewModel(repository)
         advanceUntilIdle()
         viewModel.uiEffect.test {
@@ -112,10 +136,12 @@ class StockListViewModelTest {
             coEvery { refreshStocks() } returns Result.success(Unit)
         }
 
-    private val sampleStock = Stock(
+    private val sampleStock2330 = Stock(
         code = "2330", name = "台積電",
         openingPrice = null, highestPrice = null, lowestPrice = null, closingPrice = null,
         monthlyAveragePrice = null, change = null, tradeVolume = null, tradeValue = null,
         transactionCount = null, peRatio = null, dividendYield = null, pbRatio = null,
     )
+
+    private val sampleStock0050 = sampleStock2330.copy(code = "0050", name = "元大台灣50")
 }
