@@ -24,7 +24,7 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.network)
     implementation(projects.core.ui)
-    implementation(libs.androidx.room3.runtime)
+    api(libs.androidx.room3.runtime)
     implementation(libs.androidx.sqlite.bundled)
     ksp(libs.androidx.room3.compiler)
     ksp(libs.moshi.kotlin.codegen)
