@@ -1,0 +1,97 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "5fe9510fd4c21867130192c61c790bb4",
+    "entities": [
+      {
+        "tableName": "stocks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`code` TEXT NOT NULL, `name` TEXT NOT NULL, `openingPrice` TEXT, `highestPrice` TEXT, `lowestPrice` TEXT, `closingPrice` TEXT, `monthlyAveragePrice` TEXT, `change` TEXT, `tradeVolume` INTEGER, `tradeValue` INTEGER, `transactionCount` INTEGER, `peRatio` TEXT, `dividendYield` TEXT, `pbRatio` TEXT, PRIMARY KEY(`code`))",
+        "fields": [
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openingPrice",
+            "columnName": "openingPrice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "highestPrice",
+            "columnName": "highestPrice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lowestPrice",
+            "columnName": "lowestPrice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "closingPrice",
+            "columnName": "closingPrice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "monthlyAveragePrice",
+            "columnName": "monthlyAveragePrice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "change",
+            "columnName": "change",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tradeVolume",
+            "columnName": "tradeVolume",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tradeValue",
+            "columnName": "tradeValue",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "transactionCount",
+            "columnName": "transactionCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "peRatio",
+            "columnName": "peRatio",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dividendYield",
+            "columnName": "dividendYield",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pbRatio",
+            "columnName": "pbRatio",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "code"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5fe9510fd4c21867130192c61c790bb4')"
+    ]
+  }
+}
