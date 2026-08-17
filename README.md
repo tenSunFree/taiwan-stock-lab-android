@@ -1,14 +1,14 @@
 # taiwan-stock-lab-android
 
-[![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![AGP](https://img.shields.io/badge/AGP-9.2.1-3DDC84?logo=android&logoColor=white)](https://developer.android.com/build/releases/gradle-plugin)
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2B%20Multi--Module-4CAF50)](#architecture)
 [![Async](https://img.shields.io/badge/Async-Coroutines%20%2B%20Flow-1565C0)](#tech-stack)
 [![Data](https://img.shields.io/badge/Data-Offline--First%20%2B%20Room%203-009688)](#offline-first-architecture)
 [![DI](https://img.shields.io/badge/DI-Hilt-49A84A)](#dependency-injection)
-[![UI](https://img.shields.io/badge/UI-XML%20%2B%20ViewBinding-3DDC84?logo=android&logoColor=white)](#ui)
+[![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
 [![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK-FF9800)](#testing)
+[![Android CI](https://github.com/kw012345678/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/kw012345678/taiwan-stock-lab-android/actions/workflows/ci.yml)
 [![Build](https://img.shields.io/badge/Build-Gradle%20Version%20Catalog-02303A?logo=gradle&logoColor=white)](#tech-stack)
 
 ---
@@ -17,9 +17,7 @@
 
 A Taiwan stock market Android app built on top of the [TWSE OpenAPI](https://openapi.twse.com.tw/), aggregating valuation, daily price, average-price, and trading data for listed stocks.
 
-The current implementation is built with Kotlin, Clean Architecture, a multi-module Gradle setup, structured concurrency, an offline-first Room 3 persistence layer, a Hilt-based dependency injection composition root, a Hilt-injected presentation state layer using MVI-style Unidirectional Data Flow, and an XML-based stock list screen.
-
-Jetpack Compose interoperability is planned as a follow-up.
+The current implementation is built with Kotlin, Clean Architecture, a multi-module Gradle setup, structured concurrency, an offline-first Room 3 persistence layer, a Hilt-based dependency injection composition root, a Hilt-injected presentation state layer using MVI-style Unidirectional Data Flow, an XML-based stock list screen with a Compose-based market summary component, and a GitHub Actions CI pipeline.
 
 This repository is intended for learning, technical assessment, and engineering demonstration purposes.
 
@@ -67,12 +65,12 @@ This repository is intended for learning, technical assessment, and engineering 
 - Sort-direction changes update the ViewModel state atomically and reset the list to the top once the newly sorted data is committed
 - Stock valuation details (P/E ratio, dividend yield, P/B ratio) via a Material alert dialog
 - Initial-loading and empty-state UI handling
+- Compose-based market summary bar (`MarketSummaryBar`) embedded into the XML screen via `ComposeView`, showing advancing/declining/unchanged stock counts computed by a pure, independently-testable function
 - GitHub Actions CI running JVM unit tests, Android Lint, and a debug build on every push to `main` and every pull request
 - JVM unit tests and Android instrumentation tests
 
 ### Planned
 
-- Jetpack Compose custom components embedded through `ComposeView`
 - Dark mode verification pass
 - Configuration-change support verification
 - ktlint
@@ -100,8 +98,8 @@ This repository is intended for learning, technical assessment, and engineering 
 - **`:app`** — Android application entry point and dependency injection composition root. Owns application-level Hilt modules and the screen host (`MainActivity`).
 - **`:core:common`** — Pure Kotlin/JVM module. Contains shared coroutine abstractions such as `DispatchersProvider`. Does not depend on Android or feature modules.
 - **`:core:network`** — Reusable networking infrastructure (Retrofit, OkHttp, Moshi, `NetworkClientFactory`). Contains no TWSE-specific feature logic.
-- **`:core:ui`** — Shared color/theme resources (e.g. `stock_price_up`, `stock_price_down`, `stock_card_background`), with light/dark variants.
-- **`:feature:stocklist`** — Owns all stock-list-specific logic: TWSE API contracts and DTOs, remote data source, Room persistence, domain model, repository implementation, presentation state (ViewModel), and screen-specific UI rendering (`RecyclerView` adapter, item layout, UI models).
+- **`:core:ui`** — Shared color/theme resources for both XML (`stock_price_up`, `stock_price_down`, `stock_card_background`, with light/dark variants) and Compose (`StockLabTheme`, `StockLabColors`).
+- **`:feature:stocklist`** — Owns all stock-list-specific logic: TWSE API contracts and DTOs, remote data source, Room persistence, domain model, repository implementation, presentation state (ViewModel), and screen-specific UI rendering (`RecyclerView` adapter, item layout, UI models, Compose components).
 
 Core modules never depend on feature modules. The domain layer has no knowledge of Retrofit, Room, or Android framework classes.
 
@@ -234,6 +232,7 @@ The stock list screen is `RecyclerView`-based, hosted by `MainActivity` (`@Andro
 ```text
 MainActivity
  ├── MaterialToolbar (sort action)
+ ├── ComposeView (MarketSummaryBar — advancing/declining/unchanged counts)
  ├── "最後更新：..." timestamp label
  ├── SwipeRefreshLayout
  │      └── RecyclerView (StockListAdapter / ListAdapter + DiffUtil)
@@ -246,6 +245,29 @@ MainActivity
 `StockListAdapter` uses `ViewBinding` and `DiffUtil.ItemCallback` (item identity by stock code, content equality by full `StockUiModel`) for efficient list updates.
 
 `RecyclerView.itemAnimator` is disabled (`null`). A full stock-code sort reversal reorders nearly the entire dataset (1,000+ rows), which `DiffUtil` interprets as a large batch of item moves; the default `ItemAnimator` playing move animations for all of them was visually indistinguishable from the list scrolling on its own. Disabling it keeps `DiffUtil`'s minimal-update behavior while removing the animation — an appropriate trade-off for a data-dense financial list where per-item move animation carries little UX value. On a sort-direction change, the list is unconditionally reset to the top (`scrollToPosition(0)`) once the newly sorted data is committed via `submitList`'s callback.
+
+### Compose Interoperability
+
+A `MarketSummaryBar` composable is embedded into the existing XML screen (`activity_main.xml`) via `ComposeView`, demonstrating XML/Compose interop within the same screen rather than a full-screen rewrite.
+
+```text
+MainActivity.setupComposeMarketSummary()
+   │
+   ▼
+ComposeView.setContent { StockLabTheme { MarketSummaryBar(summary) } }
+   │
+   ├── uiState.stocks (collectAsStateWithLifecycle)
+   │
+   ▼
+computeMarketSummary(stocks)  ← pure function, feature:stocklist/presentation/mapper
+   │
+   ▼
+MarketSummary(advancingCount, decliningCount, unchangedCount)
+```
+
+`computeMarketSummary()` is a plain Kotlin function with no Compose dependency, so its counting logic (classifying each stock by `ChangeDirection`) is covered by ordinary JUnit 5 tests rather than requiring Compose UI testing infrastructure. `MarketSummaryBar` itself is a stateless composable — it receives `MarketSummary` as a parameter instead of observing the ViewModel directly, keeping the Compose component decoupled from business logic.
+
+`StockLabTheme` (in `:core:ui`) defines an explicit `ColorScheme` and `Typography` rather than relying on Material 3's unconfigured defaults, and `StockLabColors.priceUp`/`priceDown` mirror the existing XML color resources (`stock_price_up`/`stock_price_down`) so Compose and XML share the same stock-market color convention instead of diverging into two separate palettes.
 
 ### Feature-Internal Layering
 
@@ -273,6 +295,8 @@ feature/stocklist/
     ├── StockListViewModel.kt
     ├── adapter/
     │   └── StockListAdapter.kt
+    ├── compose/
+    │   └── MarketSummaryBar.kt
     ├── contract/
     │   ├── SortDirection.kt
     │   ├── StockListUiState.kt
@@ -280,10 +304,12 @@ feature/stocklist/
     │   └── StockListUiEffect.kt
     ├── model/
     │   ├── StockUiModel.kt
+    │   ├── MarketSummary.kt
     │   ├── PricePosition.kt
     │   └── ChangeDirection.kt
     └── mapper/
-        └── StockUiModelMapper.kt
+        ├── StockUiModelMapper.kt
+        └── MarketSummaryMapper.kt
 ```
 
 ---
@@ -337,6 +363,12 @@ feature/stocklist/
 - Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialog`, `RadioGroup`/`MaterialRadioButton`, `MaterialAlertDialogBuilder`)
 - `repeatOnLifecycle` for lifecycle-aware `Flow` collection
 
+**Compose Interoperability**
+- Jetpack Compose (Compose BOM 2026.06.01)
+- Compose Material 3
+- `ComposeView` embedded within an XML screen
+- Explicit `StockLabTheme` / `StockLabColors` shared with XML color resources
+
 **Testing**
 - JUnit 5
 - MockK
@@ -351,7 +383,6 @@ feature/stocklist/
 - GitHub Actions (test, lint, build on every push/PR to `main`)
 
 **Planned**
-- Jetpack Compose interoperability
 - Espresso UI tests
 - ktlint / detekt
 - Firebase Crashlytics
@@ -386,6 +417,8 @@ src/androidTest/   Android runtime / integration tests
 
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below monthly average), change-direction classification (positive/negative), null-value placeholders, thousands-separator formatting, and the `+`/`-` sign on the change value.
 
+**Market Summary Calculation** — `MarketSummaryMapperTest` covers counting stocks by change direction and returning an all-zero summary for an empty list, independent of any Compose runtime.
+
 Notable test names:
 
 ```text
@@ -402,6 +435,8 @@ replaceAll_writesRefreshMetadataAlongsideStocks
 migrate1To2_preservesExistingStocksAndAddsMetadataTable
 selectingAscendingSort_updatesDirectionAndStocksAtomically
 selectingCurrentSortDirection_isANoOp
+computeMarketSummary_countsStocksByChangeDirection
+computeMarketSummary_returnsAllZeroForEmptyList
 ```
 
 ---
@@ -446,8 +481,8 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 | Cache metadata | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done |
 | Sort UX polish | Single-selection sort UI, atomic sort state, stable scroll-to-top | ✅ Done |
 | Quality tooling | GitHub Actions CI (test, lint, build) | ✅ Done |
-| Compose interoperability | `ComposeView` custom components | ⏳ Next |
-| Quality tooling | ktlint, detekt | ⏳ Planned |
+| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`) | ✅ Done |
+| Quality tooling | ktlint, detekt | ⏳ Next |
 | Observability | Crashlytics, LeakCanary | ⏳ Planned |
 | Polish | Dark mode, rotation verification, animations | ⏳ Planned |
 | Scaling | Paging 3 for the stock list, if dataset size grows significantly | ⏳ Future |
@@ -472,7 +507,7 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 Clone the repository:
 
 ```bash
-git clone https://github.com/<your-account>/taiwan-stock-lab-android.git
+git clone https://github.com/kw012345678/taiwan-stock-lab-android.git
 cd taiwan-stock-lab-android
 ```
 
@@ -552,9 +587,12 @@ taiwan-stock-lab-android/
 │   ├── common/
 │   ├── network/
 │   └── ui/
-│       └── src/main/res/
-│           ├── values/colors.xml
-│           └── values-night/colors.xml
+│       └── src/main/
+│           ├── kotlin/.../core/ui/theme/
+│           │   └── StockLabTheme.kt
+│           └── res/
+│               ├── values/colors.xml
+│               └── values-night/colors.xml
 │
 ├── feature/
 │   └── stocklist/
@@ -581,6 +619,7 @@ taiwan-stock-lab-android/
 │           │   │   └── presentation/
 │           │   │       ├── StockListViewModel.kt
 │           │   │       ├── adapter/
+│           │   │       ├── compose/
 │           │   │       ├── contract/
 │           │   │       ├── model/
 │           │   │       └── mapper/
@@ -635,6 +674,7 @@ This project demonstrates Android engineering practices such as:
 - presentation-layer business-rule mapping (price coloring, formatting)
 - reactive data flow
 - database schema evolution with migration testing
+- XML/Jetpack Compose interoperability
 - continuous integration
 - automated testing
 - incremental delivery through reviewable Pull Requests

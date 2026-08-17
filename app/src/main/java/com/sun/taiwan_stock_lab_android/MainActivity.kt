@@ -4,11 +4,13 @@ import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.remember
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -19,16 +21,20 @@ import com.sun.taiwan_stock_lab_android.databinding.ActivityMainBinding
 import com.sun.taiwan_stock_lab_android.databinding.BottomSheetSortBinding
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockListAdapter
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.compose.MarketSummaryBar
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiState
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.computeMarketSummary
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.StockUiModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.runtime.getValue
+import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -47,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         setupWindowInsets()
         setupToolbar()
         setupRecyclerView()
+        setupComposeMarketSummary()
         setupSwipeRefresh()
         observeViewModel()
         viewModel.onEvent(StockListUiEvent.OnStart)
@@ -85,6 +92,16 @@ class MainActivity : AppCompatActivity() {
             // stock-code sort reversal across ~1000+ rows) were responsible
             // for the "flies to the bottom" visual artifact on sort change.
             itemAnimator = null
+        }
+    }
+
+    private fun setupComposeMarketSummary() {
+        binding.composeMarketSummary.setContent {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val summary = remember(uiState.stocks) { computeMarketSummary(uiState.stocks) }
+            StockLabTheme {
+                MarketSummaryBar(summary = summary)
+            }
         }
     }
 
