@@ -20,6 +20,12 @@
             app:menu="@menu/menu_stock_list" />
     </com.google.android.material.appbar.AppBarLayout>
 
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/composeMarketSummary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
+
     <TextView
         android:id="@+id/textLastUpdated"
         android:layout_width="0dp"
@@ -31,7 +37,7 @@
         android:textSize="12sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/appBarLayout"
+        app:layout_constraintTop_toBottomOf="@id/composeMarketSummary"
         tools:text="最後更新：08/17 14:32" />
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
