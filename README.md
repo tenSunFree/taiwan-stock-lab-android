@@ -1,5 +1,6 @@
 # taiwan-stock-lab-android
 
+[![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![AGP](https://img.shields.io/badge/AGP-9.2.1-3DDC84?logo=android&logoColor=white)](https://developer.android.com/build/releases/gradle-plugin)
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2B%20Multi--Module-4CAF50)](#architecture)
@@ -21,6 +22,15 @@ The current implementation is built with Kotlin, Clean Architecture, a multi-mod
 Jetpack Compose interoperability is planned as a follow-up.
 
 This repository is intended for learning, technical assessment, and engineering demonstration purposes.
+
+---
+
+## Preview
+
+<p align="left">
+  <img src="https://i.postimg.cc/3Ryx3SPN/Screenshot-20260817-091035.png" width="160"/>
+  <img src="https://i.postimg.cc/SsXxmTw8/Screenshot-20260817-091054.png" width="160"/>
+</p>
 
 ---
 
@@ -57,6 +67,7 @@ This repository is intended for learning, technical assessment, and engineering 
 - Sort-direction changes update the ViewModel state atomically and reset the list to the top once the newly sorted data is committed
 - Stock valuation details (P/E ratio, dividend yield, P/B ratio) via a Material alert dialog
 - Initial-loading and empty-state UI handling
+- GitHub Actions CI running JVM unit tests, Android Lint, and a debug build on every push to `main` and every pull request
 - JVM unit tests and Android instrumentation tests
 
 ### Planned
@@ -66,7 +77,6 @@ This repository is intended for learning, technical assessment, and engineering 
 - Configuration-change support verification
 - ktlint
 - detekt
-- GitHub Actions CI
 - Crash reporting and observability
 
 ---
@@ -337,11 +347,13 @@ feature/stocklist/
 - Room `MigrationTestHelper`
 - Hilt instrumentation testing (`hilt-android-testing`, custom `HiltTestRunner`)
 
+**CI/CD**
+- GitHub Actions (test, lint, build on every push/PR to `main`)
+
 **Planned**
 - Jetpack Compose interoperability
 - Espresso UI tests
 - ktlint / detekt
-- GitHub Actions
 - Firebase Crashlytics
 - LeakCanary
 
@@ -394,13 +406,27 @@ selectingCurrentSortDirection_isANoOp
 
 ---
 
+## Continuous Integration
+
+Every push to `main` and every pull request triggers a GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+```text
+checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug
+```
+
+Test and lint HTML reports are uploaded as workflow artifacts (7-day retention) regardless of whether the run passes or fails, so a failure can be diagnosed directly from the Actions run without reproducing it locally.
+
+`ktlintCheck`/`detekt` steps are intentionally not yet included — neither tool is set up in the project; they'll be added to this workflow in the same PR that introduces them. Instrumented tests (`connectedDebugAndroidTest`) are also not run in this workflow, since Android emulators in CI add meaningful setup/boot-time complexity and are planned as a separate workflow rather than blocking every push.
+
+---
+
 ## Git Workflow
 
 The repository is developed through small, independently reviewable Pull Requests. Each architectural concern is introduced in its own focused change, such as: project foundation, network infrastructure, TWSE aggregation, Room persistence, dependency injection, presentation state, UI, and quality tooling.
 
 Dependencies are introduced when first needed rather than being added up front.
 
-The repository also contains a [Pull Request template](.github/pull_request_template.md) covering Summary, Changes, Architecture, Verification, Screenshots, Notes, and Related work.
+The repository also contains a [Pull Request template](.github/pull_request_template.md) covering Summary, Changes, Architecture, Verification, Screenshots, Notes, and Related work. A [GitHub Actions workflow](.github/workflows/ci.yml) runs tests, lint, and a debug build on every push and pull request against `main`.
 
 ---
 
@@ -419,8 +445,9 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 | XML UI | Stock list, sorting, detail dialog | ✅ Done |
 | Cache metadata | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done |
 | Sort UX polish | Single-selection sort UI, atomic sort state, stable scroll-to-top | ✅ Done |
+| Quality tooling | GitHub Actions CI (test, lint, build) | ✅ Done |
 | Compose interoperability | `ComposeView` custom components | ⏳ Next |
-| Quality tooling | ktlint, detekt, CI | ⏳ Planned |
+| Quality tooling | ktlint, detekt | ⏳ Planned |
 | Observability | Crashlytics, LeakCanary | ⏳ Planned |
 | Polish | Dark mode, rotation verification, animations | ⏳ Planned |
 | Scaling | Paging 3 for the stock list, if dataset size grows significantly | ⏳ Future |
@@ -572,7 +599,9 @@ taiwan-stock-lab-android/
 │   └── wrapper/
 │
 ├── .github/
-│   └── pull_request_template.md
+│   ├── pull_request_template.md
+│   └── workflows/
+│       └── ci.yml
 │
 ├── build.gradle.kts
 ├── settings.gradle.kts
@@ -606,6 +635,7 @@ This project demonstrates Android engineering practices such as:
 - presentation-layer business-rule mapping (price coloring, formatting)
 - reactive data flow
 - database schema evolution with migration testing
+- continuous integration
 - automated testing
 - incremental delivery through reviewable Pull Requests
 
