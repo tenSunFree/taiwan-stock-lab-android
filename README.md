@@ -53,7 +53,8 @@ This repository is intended for learning, technical assessment, and engineering 
 - Screen-level presentation state managed with a Hilt-injected ViewModel, using `StateFlow` for persistent UI state and `SharedFlow` for one-off UI effects (MVI-style Unidirectional Data Flow)
 - XML-based stock list screen with `RecyclerView`, `ListAdapter`/`DiffUtil`, and `SwipeRefreshLayout`
 - Presentation-layer price coloring: closing price above/below the monthly average, and positive/negative daily change, each mapped to red/green following Taiwan stock-market convention
-- Stock-code sorting (ascending/descending) via a Material bottom sheet, default descending
+- Stock-code sorting (ascending/descending) via a Material bottom sheet, default descending, with a single-selection `RadioGroup` showing the current direction
+- Sort-direction changes update the ViewModel state atomically and reset the list to the top once the newly sorted data is committed
 - Stock valuation details (P/E ratio, dividend yield, P/B ratio) via a Material alert dialog
 - Initial-loading and empty-state UI handling
 - JVM unit tests and Android instrumentation tests
@@ -214,6 +215,8 @@ ViewModel coroutines call repository suspend functions directly on `viewModelSco
 
 `StockListUiState.hasLoadedCache` distinguishes "the local Room query hasn't emitted yet" from "it emitted an empty result" — without this, the UI briefly showed the empty-state text before the initial cache arrived, since a default/empty state was indistinguishable from a confirmed-empty cache.
 
+Selecting a sort direction updates `sortDirection` and the resorted `stocks` list in a single atomic `StateFlow` update (`applySort(direction)`), avoiding a transient state where the new direction is paired with the previous ordering. Re-selecting the currently active direction is a no-op — no re-sort, no state emission.
+
 ### UI
 
 The stock list screen is `RecyclerView`-based, hosted by `MainActivity` (`@AndroidEntryPoint`, `by viewModels()`):
@@ -224,13 +227,15 @@ MainActivity
  ├── "最後更新：..." timestamp label
  ├── SwipeRefreshLayout
  │      └── RecyclerView (StockListAdapter / ListAdapter + DiffUtil)
- ├── BottomSheetDialog (sort direction)
+ ├── BottomSheetDialog (single-selection RadioGroup for sort direction)
  └── MaterialAlertDialogBuilder (stock detail)
 ```
 
 `StockUiModel`, `PricePosition` (`ABOVE_AVERAGE`/`BELOW_AVERAGE`/`EQUAL`/`UNKNOWN`), `ChangeDirection` (`POSITIVE`/`NEGATIVE`/`ZERO`/`UNKNOWN`), and `StockUiModelMapper` all live in `:feature:stocklist/presentation` — these encode stock-specific business rules (closing price vs. monthly average, change sign) and formatting, not generic app-level view logic. `PricePosition` and `ChangeDirection` are kept as separate enums rather than a single ambiguous `PriceTrend.UP/DOWN`, since "closing price above the monthly average" and "the stock rose today" are different facts.
 
 `StockListAdapter` uses `ViewBinding` and `DiffUtil.ItemCallback` (item identity by stock code, content equality by full `StockUiModel`) for efficient list updates.
+
+`RecyclerView.itemAnimator` is disabled (`null`). A full stock-code sort reversal reorders nearly the entire dataset (1,000+ rows), which `DiffUtil` interprets as a large batch of item moves; the default `ItemAnimator` playing move animations for all of them was visually indistinguishable from the list scrolling on its own. Disabling it keeps `DiffUtil`'s minimal-update behavior while removing the animation — an appropriate trade-off for a data-dense financial list where per-item move animation carries little UX value. On a sort-direction change, the list is unconditionally reset to the top (`scrollToPosition(0)`) once the newly sorted data is committed via `submitList`'s callback.
 
 ### Feature-Internal Layering
 
@@ -319,7 +324,7 @@ feature/stocklist/
 - XML layouts + ViewBinding
 - `RecyclerView` + `ListAdapter` / `DiffUtil`
 - `SwipeRefreshLayout`
-- Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialog`, `MaterialAlertDialogBuilder`)
+- Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialog`, `RadioGroup`/`MaterialRadioButton`, `MaterialAlertDialogBuilder`)
 - `repeatOnLifecycle` for lifecycle-aware `Flow` collection
 
 **Testing**
@@ -365,7 +370,7 @@ src/androidTest/   Android runtime / integration tests
 
 **Dependency Injection** — `StockRepositoryInjectionTest` is an Android instrumentation test verifying the production Hilt dependency graph resolves and injects `StockRepository`.
 
-**Presentation State** — `StockListViewModelTest` covers cached-stock observation, `hasLoadedCache` becoming true even for an empty cache, `OnStart` triggering the initial refresh exactly once, explicit `OnRefresh`, sort-direction changes, refresh failure state/effect, last-refreshed timestamp exposure, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK, `kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
+**Presentation State** — `StockListViewModelTest` covers cached-stock observation, `hasLoadedCache` becoming true even for an empty cache, `OnStart` triggering the initial refresh exactly once, explicit `OnRefresh`, atomic sort-direction + stock-order updates, no-op behavior when re-selecting the current sort direction, refresh failure state/effect, last-refreshed timestamp exposure, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK, `kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
 
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below monthly average), change-direction classification (positive/negative), null-value placeholders, thousands-separator formatting, and the `+`/`-` sign on the change value.
 
@@ -383,6 +388,8 @@ closingAboveMonthlyAverage_isMarkedAboveAverage
 positiveChange_includesPlusSign
 replaceAll_writesRefreshMetadataAlongsideStocks
 migrate1To2_preservesExistingStocksAndAddsMetadataTable
+selectingAscendingSort_updatesDirectionAndStocksAtomically
+selectingCurrentSortDirection_isANoOp
 ```
 
 ---
@@ -411,6 +418,7 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 | Presentation state | ViewModel + MVI-style UDF | ✅ Done |
 | XML UI | Stock list, sorting, detail dialog | ✅ Done |
 | Cache metadata | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done |
+| Sort UX polish | Single-selection sort UI, atomic sort state, stable scroll-to-top | ✅ Done |
 | Compose interoperability | `ComposeView` custom components | ⏳ Next |
 | Quality tooling | ktlint, detekt, CI | ⏳ Planned |
 | Observability | Crashlytics, LeakCanary | ⏳ Planned |

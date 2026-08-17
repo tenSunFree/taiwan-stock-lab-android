@@ -72,17 +72,22 @@ class StockListViewModel @Inject constructor(
         }
     }
 
-    private fun applySort() {
-        val direction = _uiState.value.sortDirection
-        val sorted = latestStocks.sortedBy { it.code }
-            .let { if (direction == SortDirection.DESCENDING) it.reversed() else it }
-        _uiState.update { it.copy(stocks = sorted.map { stock -> stock.toUiModel() }) }
+    private fun applySort(direction: SortDirection = _uiState.value.sortDirection) {
+        val sortedStocks = latestStocks
+            .sortedBy { it.code }
+            .let { stocks -> if (direction == SortDirection.DESCENDING) stocks.reversed() else stocks }
+            .map { stock -> stock.toUiModel() }
+        _uiState.update {
+            it.copy(
+                sortDirection = direction,
+                stocks = sortedStocks,
+            )
+        }
     }
 
     private fun onSortDirectionSelected(direction: SortDirection) {
         if (direction == _uiState.value.sortDirection) return
-        _uiState.update { it.copy(sortDirection = direction) }
-        applySort()
+        applySort(direction)
     }
 
     private fun onStart() {
