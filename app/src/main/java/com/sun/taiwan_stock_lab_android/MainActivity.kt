@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private val viewModel: StockListViewModel by viewModels()
     private lateinit var adapter: StockListAdapter
     private val timeFormatter = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+    private var lastRenderedSortDirection: SortDirection? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +80,11 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
             setHasFixedSize(true)
+            // Diagnostic: disabling the default ItemAnimator to determine
+            // whether large-scale DiffUtil move animations (from a full
+            // stock-code sort reversal across ~1000+ rows) were responsible
+            // for the "flies to the bottom" visual artifact on sort change.
+            itemAnimator = null
         }
     }
 
@@ -102,7 +108,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderState(state: StockListUiState) {
-        adapter.submitList(state.stocks)
+        val previousSortDirection = lastRenderedSortDirection
+        val sortDirectionChanged =
+            previousSortDirection != null && previousSortDirection != state.sortDirection
+        lastRenderedSortDirection = state.sortDirection
+        adapter.submitList(state.stocks) {
+            if (sortDirectionChanged) {
+                binding.recyclerViewStocks.stopScroll()
+                binding.recyclerViewStocks.scrollToPosition(0)
+            }
+        }
         binding.swipeRefresh.isRefreshing =
             state.hasLoadedCache && state.stocks.isNotEmpty() && state.isRefreshing
         val isInitialLoading =
@@ -126,13 +141,22 @@ class MainActivity : AppCompatActivity() {
     private fun showSortBottomSheet() {
         val dialog = BottomSheetDialog(this)
         val sheetBinding = BottomSheetSortBinding.inflate(layoutInflater)
-        sheetBinding.textSortDescending.setOnClickListener {
-            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
-            dialog.dismiss()
+        val currentDirection = viewModel.uiState.value.sortDirection
+        val checkedId = when (currentDirection) {
+            SortDirection.DESCENDING -> R.id.radioSortDescending
+            SortDirection.ASCENDING -> R.id.radioSortAscending
         }
-        sheetBinding.textSortAscending.setOnClickListener {
-            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
+        sheetBinding.radioGroupSort.check(checkedId)
+        sheetBinding.radioGroupSort.setOnCheckedChangeListener { _, checkedId ->
+            val selectedDirection = when (checkedId) {
+                R.id.radioSortDescending -> SortDirection.DESCENDING
+                R.id.radioSortAscending -> SortDirection.ASCENDING
+                else -> return@setOnCheckedChangeListener
+            }
             dialog.dismiss()
+            if (selectedDirection == currentDirection) return@setOnCheckedChangeListener
+            binding.recyclerViewStocks.stopScroll()
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(selectedDirection))
         }
         dialog.setContentView(sheetBinding.root)
         dialog.show()

@@ -166,4 +166,35 @@ class StockListViewModelTest {
         advanceUntilIdle()
         assertEquals(timestamp, viewModel.uiState.value.lastUpdatedAt)
     }
+
+    @Test
+    fun `selecting ascending sort updates direction and stocks atomically`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.uiState.test {
+                val initialState = awaitItem()
+                assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
+                assertEquals(listOf("2330", "0050"), initialState.stocks.map { it.code })
+                viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
+                val sortedState = awaitItem()
+                assertEquals(SortDirection.ASCENDING, sortedState.sortDirection)
+                assertEquals(listOf("0050", "2330"), sortedState.stocks.map { it.code })
+                expectNoEvents()
+            }
+        }
+
+    @Test
+    fun `selecting current sort direction is a no-op`() = runTest(testDispatcher) {
+        val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
+        val viewModel = StockListViewModel(repository)
+        advanceUntilIdle()
+        viewModel.uiState.test {
+            val initialState = awaitItem()
+            assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
+            expectNoEvents()
+        }
+    }
 }

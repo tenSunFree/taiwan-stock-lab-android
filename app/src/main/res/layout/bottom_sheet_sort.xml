@@ -13,25 +13,32 @@
         android:layout_marginBottom="12dp"
         android:background="@drawable/bg_bottom_sheet_handle" />
 
-    <TextView
-        android:id="@+id/textSortDescending"
+    <RadioGroup
+        android:id="@+id/radioGroupSort"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:padding="16dp"
-        android:text="@string/sort_descending"
-        android:textSize="16sp" />
+        android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/textSortAscending"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:padding="16dp"
-        android:text="@string/sort_ascending"
-        android:textSize="16sp" />
+        <com.google.android.material.radiobutton.MaterialRadioButton
+            android:id="@+id/radioSortDescending"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:paddingHorizontal="16dp"
+            android:text="@string/sort_descending"
+            android:textSize="16sp" />
+
+        <com.google.android.material.radiobutton.MaterialRadioButton
+            android:id="@+id/radioSortAscending"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:minHeight="48dp"
+            android:paddingHorizontal="16dp"
+            android:text="@string/sort_ascending"
+            android:textSize="16sp" />
+    </RadioGroup>
 </LinearLayout>
