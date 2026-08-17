@@ -8,7 +8,7 @@
 [![DI](https://img.shields.io/badge/DI-Hilt-49A84A)](#dependency-injection)
 [![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
 [![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK-FF9800)](#testing)
-[![Android CI](https://github.com/kw012345678/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/kw012345678/taiwan-stock-lab-android/actions/workflows/ci.yml)
+[![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
 [![Build](https://img.shields.io/badge/Build-Gradle%20Version%20Catalog-02303A?logo=gradle&logoColor=white)](#tech-stack)
 
 ---
