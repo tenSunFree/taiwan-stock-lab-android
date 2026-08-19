@@ -16,16 +16,17 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class StockDaoTest {
-
     private lateinit var database: StockDatabase
     private lateinit var dao: StockDao
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        database = Room.inMemoryDatabaseBuilder<StockDatabase>(context)
-            .setDriver(BundledSQLiteDriver())
-            .build()
+        database =
+            Room
+                .inMemoryDatabaseBuilder<StockDatabase>(context)
+                .setDriver(BundledSQLiteDriver())
+                .build()
         dao = database.stockDao()
     }
 
@@ -35,43 +36,58 @@ class StockDaoTest {
     }
 
     @Test
-    fun replaceAll_clearsPreviousDataAndInsertsNew() = runBlocking {
-        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 1L)
-        dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 2L)
-        val stocks = dao.observeAll().first()
-        assertEquals(1, stocks.size)
-        assertEquals("0050", stocks.single().code)
-    }
+    fun replaceAll_clearsPreviousDataAndInsertsNew() =
+        runBlocking {
+            dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 1L)
+            dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 2L)
+            val stocks = dao.observeAll().first()
+            assertEquals(1, stocks.size)
+            assertEquals("0050", stocks.single().code)
+        }
 
     @Test
-    fun observeAll_emitsStocksOrderedByCode() = runBlocking {
-        dao.insertAll(listOf(sampleEntity("2330"), sampleEntity("0050"), sampleEntity("1101")))
-        val stocks = dao.observeAll().first()
-        assertEquals(listOf("0050", "1101", "2330"), stocks.map { it.code })
-    }
+    fun observeAll_emitsStocksOrderedByCode() =
+        runBlocking {
+            dao.insertAll(listOf(sampleEntity("2330"), sampleEntity("0050"), sampleEntity("1101")))
+            val stocks = dao.observeAll().first()
+            assertEquals(listOf("0050", "1101", "2330"), stocks.map { it.code })
+        }
 
     @Test
-    fun replaceAll_writesRefreshMetadataAlongsideStocks() = runBlocking {
-        val refreshedAt = 1_700_000_000_000L
-        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = refreshedAt)
-        val metadata = dao.observeRefreshMetadata().first()
-        assertEquals(refreshedAt, metadata?.lastSuccessfulRefreshAt)
-    }
+    fun replaceAll_writesRefreshMetadataAlongsideStocks() =
+        runBlocking {
+            val refreshedAt = 1_700_000_000_000L
+            dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = refreshedAt)
+            val metadata = dao.observeRefreshMetadata().first()
+            assertEquals(refreshedAt, metadata?.lastSuccessfulRefreshAt)
+        }
 
     @Test
-    fun replaceAll_replacesStocksAndRefreshMetadataTogether() = runBlocking {
-        dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 100L)
-        dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 200L)
-        val stocks = dao.observeAll().first()
-        val metadata = dao.observeRefreshMetadata().first()
-        assertEquals(listOf("0050"), stocks.map { it.code })
-        assertEquals(200L, metadata?.lastSuccessfulRefreshAt)
-    }
+    fun replaceAll_replacesStocksAndRefreshMetadataTogether() =
+        runBlocking {
+            dao.replaceAll(listOf(sampleEntity("2330")), refreshedAt = 100L)
+            dao.replaceAll(listOf(sampleEntity("0050")), refreshedAt = 200L)
+            val stocks = dao.observeAll().first()
+            val metadata = dao.observeRefreshMetadata().first()
+            assertEquals(listOf("0050"), stocks.map { it.code })
+            assertEquals(200L, metadata?.lastSuccessfulRefreshAt)
+        }
 
-    private fun sampleEntity(code: String) = StockEntity(
-        code = code, name = "Test", openingPrice = null, highestPrice = null,
-        lowestPrice = null, closingPrice = null, monthlyAveragePrice = null,
-        change = null, tradeVolume = null, tradeValue = null, transactionCount = null,
-        peRatio = null, dividendYield = null, pbRatio = null,
-    )
+    private fun sampleEntity(code: String) =
+        StockEntity(
+            code = code,
+            name = "Test",
+            openingPrice = null,
+            highestPrice = null,
+            lowestPrice = null,
+            closingPrice = null,
+            monthlyAveragePrice = null,
+            change = null,
+            tradeVolume = null,
+            tradeValue = null,
+            transactionCount = null,
+            peRatio = null,
+            dividendYield = null,
+            pbRatio = null,
+        )
 }

@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface StockRepository {
     fun observeStocks(): Flow<List<Stock>>
+
     fun observeLastRefreshedAt(): Flow<Long?>
+
     suspend fun refreshStocks(): Result<Unit>
 }

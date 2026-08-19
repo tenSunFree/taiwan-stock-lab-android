@@ -15,16 +15,13 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object StockRepositoryModule {
+    @Provides
+    @Singleton
+    fun provideTwseRemoteDataSource(api: TwseApiService): TwseRemoteDataSource = TwseRemoteDataSource(api)
 
     @Provides
     @Singleton
-    fun provideTwseRemoteDataSource(api: TwseApiService): TwseRemoteDataSource =
-        TwseRemoteDataSource(api)
-
-    @Provides
-    @Singleton
-    fun provideStockLocalDataSource(stockDao: StockDao): StockLocalDataSource =
-        StockLocalDataSource(stockDao)
+    fun provideStockLocalDataSource(stockDao: StockDao): StockLocalDataSource = StockLocalDataSource(stockDao)
 
     @Provides
     @Singleton

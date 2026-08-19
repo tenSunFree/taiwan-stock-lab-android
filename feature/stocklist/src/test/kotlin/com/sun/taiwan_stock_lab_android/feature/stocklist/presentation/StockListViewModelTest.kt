@@ -26,13 +26,23 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class StockListViewModelTest {
-
-    private val sampleStock2330 = Stock(
-        code = "2330", name = "台積電",
-        openingPrice = null, highestPrice = null, lowestPrice = null, closingPrice = null,
-        monthlyAveragePrice = null, change = null, tradeVolume = null, tradeValue = null,
-        transactionCount = null, peRatio = null, dividendYield = null, pbRatio = null,
-    )
+    private val sampleStock2330 =
+        Stock(
+            code = "2330",
+            name = "台積電",
+            openingPrice = null,
+            highestPrice = null,
+            lowestPrice = null,
+            closingPrice = null,
+            monthlyAveragePrice = null,
+            change = null,
+            tradeVolume = null,
+            tradeValue = null,
+            transactionCount = null,
+            peRatio = null,
+            dividendYield = null,
+            pbRatio = null,
+        )
     private val sampleStock0050 = sampleStock2330.copy(code = "0050", name = "元大台灣50")
     private val testDispatcher = StandardTestDispatcher()
 
@@ -47,96 +57,113 @@ class StockListViewModelTest {
     }
 
     @Test
-    fun `cached stocks are exposed through ui state`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock2330))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        assertEquals(listOf(sampleStock2330.toUiModel()), viewModel.uiState.value.stocks)
-    }
-
-    @Test
-    fun `default sort direction is descending by code`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
-        assertEquals(listOf("2330", "0050"), viewModel.uiState.value.stocks.map { it.code })
-    }
-
-    @Test
-    fun `selecting ascending sort reorders stocks by code`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
-        advanceUntilIdle()
-        assertEquals(listOf("0050", "2330"), viewModel.uiState.value.stocks.map { it.code })
-    }
-
-    @Test
-    fun `OnStart triggers refresh only once`() = runTest(testDispatcher) {
-        val repository = createRepository()
-        val viewModel = StockListViewModel(repository)
-        viewModel.onEvent(StockListUiEvent.OnStart)
-        viewModel.onEvent(StockListUiEvent.OnStart)
-        advanceUntilIdle()
-        coVerify(exactly = 1) { repository.refreshStocks() }
-    }
-
-    @Test
-    fun `OnRefresh triggers a repository refresh`() = runTest(testDispatcher) {
-        val repository = createRepository()
-        val viewModel = StockListViewModel(repository)
-        viewModel.onEvent(StockListUiEvent.OnRefresh)
-        advanceUntilIdle()
-        coVerify(exactly = 1) { repository.refreshStocks() }
-        assertEquals(false, viewModel.uiState.value.isRefreshing)
-    }
-
-    @Test
-    fun `refresh failure updates state and emits ShowError`() = runTest(testDispatcher) {
-        val repository = mockk<StockRepository> {
-            every { observeStocks() } returns flowOf(emptyList())
-            every { observeLastRefreshedAt() } returns flowOf(null)
-            coEvery { refreshStocks() } returns Result.failure(RuntimeException("Network failure"))
+    fun `cached stocks are exposed through ui state`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock2330))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            assertEquals(listOf(sampleStock2330.toUiModel()), viewModel.uiState.value.stocks)
         }
-        val viewModel = StockListViewModel(repository)
-        viewModel.uiEffect.test {
+
+    @Test
+    fun `default sort direction is descending by code`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
+            assertEquals(
+                listOf("2330", "0050"),
+                viewModel.uiState.value.stocks
+                    .map { it.code },
+            )
+        }
+
+    @Test
+    fun `selecting ascending sort reorders stocks by code`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
+            advanceUntilIdle()
+            assertEquals(
+                listOf("0050", "2330"),
+                viewModel.uiState.value.stocks
+                    .map { it.code },
+            )
+        }
+
+    @Test
+    fun `OnStart triggers refresh only once`() =
+        runTest(testDispatcher) {
+            val repository = createRepository()
+            val viewModel = StockListViewModel(repository)
+            viewModel.onEvent(StockListUiEvent.OnStart)
+            viewModel.onEvent(StockListUiEvent.OnStart)
+            advanceUntilIdle()
+            coVerify(exactly = 1) { repository.refreshStocks() }
+        }
+
+    @Test
+    fun `OnRefresh triggers a repository refresh`() =
+        runTest(testDispatcher) {
+            val repository = createRepository()
+            val viewModel = StockListViewModel(repository)
             viewModel.onEvent(StockListUiEvent.OnRefresh)
             advanceUntilIdle()
-            assertEquals(StockListUiEffect.ShowError("Network failure"), awaitItem())
-            cancelAndIgnoreRemainingEvents()
+            coVerify(exactly = 1) { repository.refreshStocks() }
+            assertEquals(false, viewModel.uiState.value.isRefreshing)
         }
-        assertEquals("Network failure", viewModel.uiState.value.errorMessage)
-        assertEquals(false, viewModel.uiState.value.isRefreshing)
-    }
 
     @Test
-    fun `known stock click emits ShowStockDetail`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock2330))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        viewModel.uiEffect.test {
-            viewModel.onEvent(StockListUiEvent.OnStockClicked("2330"))
-            assertEquals(
-                StockListUiEffect.ShowStockDetail(sampleStock2330.toUiModel()),
-                awaitItem()
-            )
-            cancelAndIgnoreRemainingEvents()
+    fun `refresh failure updates state and emits ShowError`() =
+        runTest(testDispatcher) {
+            val repository =
+                mockk<StockRepository> {
+                    every { observeStocks() } returns flowOf(emptyList())
+                    every { observeLastRefreshedAt() } returns flowOf(null)
+                    coEvery { refreshStocks() } returns Result.failure(RuntimeException("Network failure"))
+                }
+            val viewModel = StockListViewModel(repository)
+            viewModel.uiEffect.test {
+                viewModel.onEvent(StockListUiEvent.OnRefresh)
+                advanceUntilIdle()
+                assertEquals(StockListUiEffect.ShowError("Network failure"), awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+            assertEquals("Network failure", viewModel.uiState.value.errorMessage)
+            assertEquals(false, viewModel.uiState.value.isRefreshing)
         }
-    }
 
     @Test
-    fun `unknown stock click emits nothing`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock2330))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        viewModel.uiEffect.test {
-            viewModel.onEvent(StockListUiEvent.OnStockClicked("9999"))
-            expectNoEvents()
-            cancelAndIgnoreRemainingEvents()
+    fun `known stock click emits ShowStockDetail`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock2330))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.uiEffect.test {
+                viewModel.onEvent(StockListUiEvent.OnStockClicked("2330"))
+                assertEquals(
+                    StockListUiEffect.ShowStockDetail(sampleStock2330.toUiModel()),
+                    awaitItem(),
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
         }
-    }
+
+    @Test
+    fun `unknown stock click emits nothing`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock2330))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.uiEffect.test {
+                viewModel.onEvent(StockListUiEvent.OnStockClicked("9999"))
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
 
     private fun createRepository(
         stocks: List<Stock> = emptyList(),
@@ -159,13 +186,14 @@ class StockListViewModelTest {
         }
 
     @Test
-    fun `last refreshed timestamp is exposed through ui state`() = runTest(testDispatcher) {
-        val timestamp = 1_700_000_000_000L
-        val repository = createRepository(lastRefreshedAt = timestamp)
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        assertEquals(timestamp, viewModel.uiState.value.lastUpdatedAt)
-    }
+    fun `last refreshed timestamp is exposed through ui state`() =
+        runTest(testDispatcher) {
+            val timestamp = 1_700_000_000_000L
+            val repository = createRepository(lastRefreshedAt = timestamp)
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            assertEquals(timestamp, viewModel.uiState.value.lastUpdatedAt)
+        }
 
     @Test
     fun `selecting ascending sort updates direction and stocks atomically`() =
@@ -186,15 +214,16 @@ class StockListViewModelTest {
         }
 
     @Test
-    fun `selecting current sort direction is a no-op`() = runTest(testDispatcher) {
-        val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
-        val viewModel = StockListViewModel(repository)
-        advanceUntilIdle()
-        viewModel.uiState.test {
-            val initialState = awaitItem()
-            assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
-            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
-            expectNoEvents()
+    fun `selecting current sort direction is a no-op`() =
+        runTest(testDispatcher) {
+            val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.uiState.test {
+                val initialState = awaitItem()
+                assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
+                viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
+                expectNoEvents()
+            }
         }
-    }
 }

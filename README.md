@@ -90,13 +90,13 @@ purposes.
   and every pull request
 - JVM unit tests and Android instrumentation tests
 - ktlint (14.2.0) and detekt (2.0.0-alpha.5) configured across all modules from the root Gradle
-  build
+  build, with the codebase fully formatted and all findings resolved
 
 ### Planned
 
 - Dark mode verification pass
 - Configuration-change support verification
-- ktlint / detekt formatting pass, findings triage, and CI integration
+- ktlint / detekt CI integration
 - Crash reporting and observability
 
 ---
@@ -106,13 +106,13 @@ purposes.
 ### Module Graph
 
 ```text
-                       :app
-                         │
-                         ▼
-                 :feature:stocklist
-                  │       │       │
-                  ▼       ▼       ▼
-           :core:common :core:ui :core:network
+            :app
+              │
+              ▼
+      :feature:stocklist
+       │       │       │
+       ▼       ▼       ▼
+:core:common :core:ui :core:network
 ```
 
 **Modules**
@@ -166,9 +166,9 @@ producing a partially inconsistent snapshot.
 ### Offline-First Architecture
 
 ```text
-                         refresh
-                           │
-                           ▼
+refresh
+   │
+   ▼
 TWSE APIs
    │
    ▼
@@ -464,7 +464,8 @@ feature/stocklist/
 - detekt 2.0.0-alpha.5 (`dev.detekt`), applied across all modules from the root build,
   `buildUponDefaultConfig = true` with a minimal project override (`config/detekt/detekt.yml`)
 - `.editorconfig` for consistent Kotlin/Kotlin-DSL formatting rules
-- Formatting pass, findings triage, and CI enforcement are in progress — see [Roadmap](#roadmap)
+- Codebase passes both tools cleanly with zero findings and no baseline suppressions
+- CI enforcement is in progress — see [Roadmap](#roadmap)
 
 **Testing**
 
@@ -572,11 +573,10 @@ whether the run passes or fails, so a failure can be diagnosed directly from the
 reproducing it locally.
 
 `ktlintCheck`/`detekt` are now configured in the project (ktlint 14.2.0, detekt 2.0.0-alpha.5,
-applied across all modules from the root build) but not yet wired into this workflow — they'll be
-added once the existing formatting pass and findings triage are complete, to avoid landing a CI step
-that fails on day one. Instrumented tests (`connectedDebugAndroidTest`) are also not run in this
-workflow, since Android emulators in CI add meaningful setup/boot-time complexity and are planned as
-a separate workflow rather than blocking every push.
+applied across all modules from the root build) and pass cleanly with no findings, but are not yet
+wired into this workflow — that's the next step. Instrumented tests (`connectedDebugAndroidTest`)
+are also not run in this workflow, since Android emulators in CI add meaningful setup/boot-time
+complexity and are planned as a separate workflow rather than blocking every push.
 
 ---
 
@@ -614,7 +614,8 @@ push and pull request against `main`.
 | Quality tooling          | GitHub Actions CI (test, lint, build)                                                      | ✅ Done    |
 | Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                       | ✅ Done    |
 | Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                       | ✅ Done    |
-| Quality tooling          | ktlint, detekt — formatting pass, findings triage, CI integration                          | ⏳ Next    |
+| Quality tooling          | ktlint, detekt — formatting pass and findings resolved (zero baseline)                     | ✅ Done    |
+| Quality tooling          | ktlint, detekt — CI integration                                                            | ⏳ Next    |
 | Observability            | Crashlytics, LeakCanary                                                                    | ⏳ Planned |
 | Polish                   | Dark mode, rotation verification, animations                                               | ⏳ Planned |
 | Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                           | ⏳ Future  |

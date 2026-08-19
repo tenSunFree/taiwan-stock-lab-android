@@ -6,7 +6,6 @@ import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.dto.StockV
 import retrofit2.http.GET
 
 interface TwseApiService {
-
     @GET("v1/exchangeReport/BWIBBU_ALL")
     suspend fun getStockValuations(): List<StockValuationDto>
 

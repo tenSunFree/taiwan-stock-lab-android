@@ -13,7 +13,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object TwseNetworkModule {
-
     private const val TWSE_BASE_URL = "https://openapi.twse.com.tw/"
 
     @Provides
@@ -26,6 +25,5 @@ object TwseNetworkModule {
 
     @Provides
     @Singleton
-    fun provideTwseApiService(retrofit: Retrofit): TwseApiService =
-        retrofit.create(TwseApiService::class.java)
+    fun provideTwseApiService(retrofit: Retrofit): TwseApiService = retrofit.create(TwseApiService::class.java)
 }

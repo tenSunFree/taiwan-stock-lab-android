@@ -14,7 +14,6 @@ import javax.inject.Inject
 @HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 class StockRepositoryInjectionTest {
-
     @get:Rule
     val hiltRule = HiltAndroidRule(this)
 

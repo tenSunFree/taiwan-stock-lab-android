@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -17,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 import com.sun.taiwan_stock_lab_android.databinding.ActivityMainBinding
 import com.sun.taiwan_stock_lab_android.databinding.BottomSheetSortBinding
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
@@ -33,12 +35,9 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.runtime.getValue
-import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
-
     private lateinit var binding: ActivityMainBinding
     private val viewModel: StockListViewModel by viewModels()
     private lateinit var adapter: StockListAdapter
@@ -80,9 +79,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
-        adapter = StockListAdapter { stockCode ->
-            viewModel.onEvent(StockListUiEvent.OnStockClicked(stockCode))
-        }
+        adapter =
+            StockListAdapter { stockCode ->
+                viewModel.onEvent(StockListUiEvent.OnStockClicked(stockCode))
+            }
         binding.recyclerViewStocks.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
@@ -136,12 +136,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.swipeRefresh.isRefreshing =
-            state.hasLoadedCache && state.stocks.isNotEmpty() && state.isRefreshing
+            state.hasLoadedCache &&
+            state.stocks.isNotEmpty() &&
+            state.isRefreshing
         val isInitialLoading =
             !state.hasLoadedCache || (state.stocks.isEmpty() && state.isRefreshing)
         binding.progressInitial.isVisible = isInitialLoading
         binding.textEmpty.isVisible =
-            state.hasLoadedCache && state.stocks.isEmpty() && !state.isRefreshing
+            state.hasLoadedCache &&
+            state.stocks.isEmpty() &&
+            !state.isRefreshing
         binding.textLastUpdated.text = state.lastUpdatedAt
             ?.let { timeFormatter.format(Date(it)) }
             ?.let { getString(R.string.last_updated_format, it) }
@@ -159,17 +163,19 @@ class MainActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this)
         val sheetBinding = BottomSheetSortBinding.inflate(layoutInflater)
         val currentDirection = viewModel.uiState.value.sortDirection
-        val checkedId = when (currentDirection) {
-            SortDirection.DESCENDING -> R.id.radioSortDescending
-            SortDirection.ASCENDING -> R.id.radioSortAscending
-        }
+        val checkedId =
+            when (currentDirection) {
+                SortDirection.DESCENDING -> R.id.radioSortDescending
+                SortDirection.ASCENDING -> R.id.radioSortAscending
+            }
         sheetBinding.radioGroupSort.check(checkedId)
         sheetBinding.radioGroupSort.setOnCheckedChangeListener { _, checkedId ->
-            val selectedDirection = when (checkedId) {
-                R.id.radioSortDescending -> SortDirection.DESCENDING
-                R.id.radioSortAscending -> SortDirection.ASCENDING
-                else -> return@setOnCheckedChangeListener
-            }
+            val selectedDirection =
+                when (checkedId) {
+                    R.id.radioSortDescending -> SortDirection.DESCENDING
+                    R.id.radioSortAscending -> SortDirection.ASCENDING
+                    else -> return@setOnCheckedChangeListener
+                }
             dialog.dismiss()
             if (selectedDirection == currentDirection) return@setOnCheckedChangeListener
             binding.recyclerViewStocks.stopScroll()
@@ -188,8 +194,7 @@ class MainActivity : AppCompatActivity() {
                     getString(R.string.stock_detail_dividend_yield, stock.dividendYield),
                     getString(R.string.stock_detail_pb_ratio, stock.pbRatio),
                 ).joinToString("\n"),
-            )
-            .setPositiveButton(R.string.dialog_confirm, null)
+            ).setPositiveButton(R.string.dialog_confirm, null)
             .show()
     }
 

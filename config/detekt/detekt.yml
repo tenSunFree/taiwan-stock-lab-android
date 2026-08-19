@@ -8,3 +8,9 @@ complexity:
     allowedLines: 80   # Slightly relaxed from the default (60)
   TooManyFunctions:
     active: false   # ViewModel/Adapter classes legitimately exceed this; revisit later
+
+naming:
+  PackageNaming:
+    active: false   # Project package name contains underscores by convention; not worth a rename
+  FunctionNaming:
+    active: false   # Jetpack Compose composables use PascalCase by convention
