@@ -11,6 +11,7 @@ complexity:
 
 naming:
   PackageNaming:
-    active: false   # Project package name contains underscores by convention; not worth a rename
+    active: false   # Existing base package contains underscores; renaming it is outside the current scope
   FunctionNaming:
-    active: false   # Jetpack Compose composables use PascalCase by convention
+    ignoreAnnotated:
+      - 'Composable'

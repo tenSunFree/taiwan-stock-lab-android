@@ -10,5 +10,7 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 max_line_length = 120
+# Existing base package contains underscores; renaming it is outside the current scope.
 ktlint_standard_package-name = disabled
-ktlint_standard_function-naming = disabled
+# Compose convention: @Composable functions returning UI use PascalCase.
+ktlint_function_naming_ignore_when_annotated_with = Composable
