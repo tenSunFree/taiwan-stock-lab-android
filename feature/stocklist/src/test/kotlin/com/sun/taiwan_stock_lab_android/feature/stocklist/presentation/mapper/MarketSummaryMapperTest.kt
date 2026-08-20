@@ -7,16 +7,16 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class MarketSummaryMapperTest {
-
     @Test
     fun `computeMarketSummary counts stocks by change direction`() {
-        val stocks = listOf(
-            stockWith(ChangeDirection.POSITIVE),
-            stockWith(ChangeDirection.POSITIVE),
-            stockWith(ChangeDirection.NEGATIVE),
-            stockWith(ChangeDirection.ZERO),
-            stockWith(ChangeDirection.UNKNOWN),
-        )
+        val stocks =
+            listOf(
+                stockWith(ChangeDirection.POSITIVE),
+                stockWith(ChangeDirection.POSITIVE),
+                stockWith(ChangeDirection.NEGATIVE),
+                stockWith(ChangeDirection.ZERO),
+                stockWith(ChangeDirection.UNKNOWN),
+            )
         val summary = computeMarketSummary(stocks)
         assertEquals(2, summary.advancingCount)
         assertEquals(1, summary.decliningCount)
@@ -33,11 +33,23 @@ class MarketSummaryMapperTest {
         assertEquals(0, summary.totalCount)
     }
 
-    private fun stockWith(direction: ChangeDirection) = StockUiModel(
-        code = "0000", name = "Test",
-        openingPrice = "--", highestPrice = "--", lowestPrice = "--", closingPrice = "--",
-        monthlyAveragePrice = "--", change = "--", tradeVolume = "--", tradeValue = "--",
-        transactionCount = "--", peRatio = "--", dividendYield = "--", pbRatio = "--",
-        closingPricePosition = PricePosition.UNKNOWN, changeDirection = direction,
-    )
+    private fun stockWith(direction: ChangeDirection) =
+        StockUiModel(
+            code = "0000",
+            name = "Test",
+            openingPrice = "--",
+            highestPrice = "--",
+            lowestPrice = "--",
+            closingPrice = "--",
+            monthlyAveragePrice = "--",
+            change = "--",
+            tradeVolume = "--",
+            tradeValue = "--",
+            transactionCount = "--",
+            peRatio = "--",
+            dividendYield = "--",
+            pbRatio = "--",
+            closingPricePosition = PricePosition.UNKNOWN,
+            changeDirection = direction,
+        )
 }

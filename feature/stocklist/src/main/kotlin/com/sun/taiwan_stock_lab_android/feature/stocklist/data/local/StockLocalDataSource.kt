@@ -17,9 +17,10 @@ class StockLocalDataSource(
 ) {
     fun observeStocks(): Flow<List<StockEntity>> = stockDao.observeAll()
 
-    fun observeLastRefreshedAt(): Flow<Long?> =
-        stockDao.observeRefreshMetadata().map { it?.lastSuccessfulRefreshAt }
+    fun observeLastRefreshedAt(): Flow<Long?> = stockDao.observeRefreshMetadata().map { it?.lastSuccessfulRefreshAt }
 
-    suspend fun replaceAll(stocks: List<StockEntity>, refreshedAt: Long) =
-        stockDao.replaceAll(stocks, refreshedAt)
+    suspend fun replaceAll(
+        stocks: List<StockEntity>,
+        refreshedAt: Long,
+    ) = stockDao.replaceAll(stocks, refreshedAt)
 }

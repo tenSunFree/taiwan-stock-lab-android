@@ -11,24 +11,25 @@ import java.util.Locale
 
 private const val PLACEHOLDER = "--"
 
-fun Stock.toUiModel(): StockUiModel = StockUiModel(
-    code = code,
-    name = name,
-    openingPrice = openingPrice.formatDecimal(),
-    highestPrice = highestPrice.formatDecimal(),
-    lowestPrice = lowestPrice.formatDecimal(),
-    closingPrice = closingPrice.formatDecimal(),
-    monthlyAveragePrice = monthlyAveragePrice.formatDecimal(),
-    change = change.formatChange(),
-    tradeVolume = tradeVolume.formatLong(),
-    tradeValue = tradeValue.formatLong(),
-    transactionCount = transactionCount.formatLong(),
-    peRatio = peRatio.formatDecimal(),
-    dividendYield = dividendYield.formatDecimal(),
-    pbRatio = pbRatio.formatDecimal(),
-    closingPricePosition = closingPricePosition(closingPrice, monthlyAveragePrice),
-    changeDirection = changeDirection(change),
-)
+fun Stock.toUiModel(): StockUiModel =
+    StockUiModel(
+        code = code,
+        name = name,
+        openingPrice = openingPrice.formatDecimal(),
+        highestPrice = highestPrice.formatDecimal(),
+        lowestPrice = lowestPrice.formatDecimal(),
+        closingPrice = closingPrice.formatDecimal(),
+        monthlyAveragePrice = monthlyAveragePrice.formatDecimal(),
+        change = change.formatChange(),
+        tradeVolume = tradeVolume.formatLong(),
+        tradeValue = tradeValue.formatLong(),
+        transactionCount = transactionCount.formatLong(),
+        peRatio = peRatio.formatDecimal(),
+        dividendYield = dividendYield.formatDecimal(),
+        pbRatio = pbRatio.formatDecimal(),
+        closingPricePosition = closingPricePosition(closingPrice, monthlyAveragePrice),
+        changeDirection = changeDirection(change),
+    )
 
 private fun BigDecimal?.formatDecimal(): String {
     if (this == null) return PLACEHOLDER
@@ -48,7 +49,10 @@ private fun BigDecimal?.formatChange(): String {
 private fun Long?.formatLong(): String =
     this?.let { NumberFormat.getIntegerInstance(Locale.TAIWAN).format(it) } ?: PLACEHOLDER
 
-private fun closingPricePosition(closing: BigDecimal?, average: BigDecimal?): PricePosition {
+private fun closingPricePosition(
+    closing: BigDecimal?,
+    average: BigDecimal?,
+): PricePosition {
     if (closing == null || average == null) return PricePosition.UNKNOWN
     return when {
         closing > average -> PricePosition.ABOVE_AVERAGE

@@ -8,29 +8,41 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 
 class StockUiModelMapperTest {
-
-    private val base = Stock(
-        code = "2330", name = "台積電",
-        openingPrice = null, highestPrice = null, lowestPrice = null, closingPrice = null,
-        monthlyAveragePrice = null, change = null, tradeVolume = null, tradeValue = null,
-        transactionCount = null, peRatio = null, dividendYield = null, pbRatio = null,
-    )
+    private val base =
+        Stock(
+            code = "2330",
+            name = "台積電",
+            openingPrice = null,
+            highestPrice = null,
+            lowestPrice = null,
+            closingPrice = null,
+            monthlyAveragePrice = null,
+            change = null,
+            tradeVolume = null,
+            tradeValue = null,
+            transactionCount = null,
+            peRatio = null,
+            dividendYield = null,
+            pbRatio = null,
+        )
 
     @Test
     fun `closing above monthly average is marked above average`() {
-        val stock = base.copy(
-            closingPrice = BigDecimal("1485.00"),
-            monthlyAveragePrice = BigDecimal("1420.50")
-        )
+        val stock =
+            base.copy(
+                closingPrice = BigDecimal("1485.00"),
+                monthlyAveragePrice = BigDecimal("1420.50"),
+            )
         assertEquals(PricePosition.ABOVE_AVERAGE, stock.toUiModel().closingPricePosition)
     }
 
     @Test
     fun `closing below monthly average is marked below average`() {
-        val stock = base.copy(
-            closingPrice = BigDecimal("1400.00"),
-            monthlyAveragePrice = BigDecimal("1420.50")
-        )
+        val stock =
+            base.copy(
+                closingPrice = BigDecimal("1400.00"),
+                monthlyAveragePrice = BigDecimal("1420.50"),
+            )
         assertEquals(PricePosition.BELOW_AVERAGE, stock.toUiModel().closingPricePosition)
     }
 

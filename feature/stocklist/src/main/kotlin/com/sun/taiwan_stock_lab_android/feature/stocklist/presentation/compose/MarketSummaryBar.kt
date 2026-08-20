@@ -21,21 +21,22 @@ fun MarketSummaryBar(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SummaryItem(label = "上漲", count = summary.advancingCount, color = StockLabColors.priceUp)
         SummaryItem(
             label = "下跌",
             count = summary.decliningCount,
-            color = StockLabColors.priceDown
+            color = StockLabColors.priceDown,
         )
         SummaryItem(
             label = "平盤",
             count = summary.unchangedCount,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -61,11 +62,12 @@ private fun SummaryItem(
 private fun MarketSummaryBarPreview() {
     StockLabTheme {
         MarketSummaryBar(
-            summary = MarketSummary(
-                advancingCount = 812,
-                decliningCount = 431,
-                unchangedCount = 57
-            ),
+            summary =
+                MarketSummary(
+                    advancingCount = 812,
+                    decliningCount = 431,
+                    unchangedCount = 57,
+                ),
         )
     }
 }

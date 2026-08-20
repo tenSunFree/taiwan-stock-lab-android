@@ -21,12 +21,10 @@ class OfflineFirstStockRepository(
     private val localDataSource: StockLocalDataSource,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : StockRepository {
-
     override fun observeStocks(): Flow<List<Stock>> =
         localDataSource.observeStocks().map { entities -> entities.map { it.toDomain() } }
 
-    override fun observeLastRefreshedAt(): Flow<Long?> =
-        localDataSource.observeLastRefreshedAt()
+    override fun observeLastRefreshedAt(): Flow<Long?> = localDataSource.observeLastRefreshedAt()
 
     override suspend fun refreshStocks(): Result<Unit> =
         try {
@@ -40,7 +38,13 @@ class OfflineFirstStockRepository(
             }
         } catch (exception: CancellationException) {
             throw exception
-        } catch (exception: Exception) {
+        } catch (
+            @Suppress("TooGenericExceptionCaught")
+            exception: Exception,
+        ) {
+            // Intentionally broad: any non-cancellation failure (network, parsing, etc.)
+            // must convert to Result.failure per the StockRepository contract, rather
+            // than propagate and break the offline-first cache guarantee.
             Result.failure(exception)
         }
 }

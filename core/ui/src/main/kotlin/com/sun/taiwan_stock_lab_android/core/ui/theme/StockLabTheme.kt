@@ -29,10 +29,11 @@ object StockLabColors {
 private val LightColorScheme = lightColorScheme()
 private val DarkColorScheme = darkColorScheme()
 
-private val StockLabTypography = Typography(
-    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 13.sp),
-    titleSmall = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp),
-)
+private val StockLabTypography =
+    Typography(
+        labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 13.sp),
+        titleSmall = TextStyle(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+    )
 
 @Composable
 fun StockLabTheme(content: @Composable () -> Unit) {

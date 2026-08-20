@@ -14,11 +14,11 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
-
     @Provides
     @Singleton
-    fun provideStockDatabase(@ApplicationContext context: Context): StockDatabase =
-        StockDatabaseFactory.create(context)
+    fun provideStockDatabase(
+        @ApplicationContext context: Context,
+    ): StockDatabase = StockDatabaseFactory.create(context)
 
     @Provides
     @Singleton

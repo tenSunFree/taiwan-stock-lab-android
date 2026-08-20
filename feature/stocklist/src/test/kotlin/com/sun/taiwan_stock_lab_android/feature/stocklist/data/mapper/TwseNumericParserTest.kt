@@ -9,7 +9,6 @@ import org.junit.jupiter.params.provider.ValueSource
 import java.math.BigDecimal
 
 class TwseNumericParserTest {
-
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = [" ", "-", "--", "---", "invalid"])

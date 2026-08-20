@@ -8,14 +8,15 @@ import kotlinx.coroutines.coroutineScope
 class TwseRemoteDataSource(
     private val api: TwseApiService,
 ) {
-    suspend fun fetchSnapshot(): TwseRawSnapshot = coroutineScope {
-        val valuationsDeferred = async { api.getStockValuations() }
-        val dayAveragesDeferred = async { api.getStockDayAverages() }
-        val daysDeferred = async { api.getStockDays() }
-        TwseRawSnapshot(
-            valuations = valuationsDeferred.await(),
-            dayAverages = dayAveragesDeferred.await(),
-            days = daysDeferred.await(),
-        )
-    }
+    suspend fun fetchSnapshot(): TwseRawSnapshot =
+        coroutineScope {
+            val valuationsDeferred = async { api.getStockValuations() }
+            val dayAveragesDeferred = async { api.getStockDayAverages() }
+            val daysDeferred = async { api.getStockDays() }
+            TwseRawSnapshot(
+                valuations = valuationsDeferred.await(),
+                dayAverages = dayAveragesDeferred.await(),
+                days = daysDeferred.await(),
+            )
+        }
 }

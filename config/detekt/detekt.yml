@@ -8,3 +8,10 @@ complexity:
     allowedLines: 80   # Slightly relaxed from the default (60)
   TooManyFunctions:
     active: false   # ViewModel/Adapter classes legitimately exceed this; revisit later
+
+naming:
+  PackageNaming:
+    active: false   # Existing base package contains underscores; renaming it is outside the current scope
+  FunctionNaming:
+    ignoreAnnotated:
+      - 'Composable'
