@@ -18,8 +18,6 @@ on:
 
 permissions:
   contents: read
-  # Only needed if you enable the optional SARIF upload step below.
-  security-events: write
 
 concurrency:
   group: android-ci-${{ github.ref }}
@@ -29,10 +27,16 @@ jobs:
   static-analysis:
     name: Static Analysis (ktlint & detekt)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only needed if you enable the optional SARIF upload step below.
+      security-events: write
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -95,6 +99,8 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup JDK
         uses: actions/setup-java@v4

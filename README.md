@@ -471,8 +471,9 @@ feature/stocklist/
   annotation-scoped naming exception rather than disabling the rule project-wide
 - The existing underscore-based base package retains an explicit `PackageNaming` exception
 - All enabled ktlint and detekt rules pass with zero findings and no detekt baseline
-- `ktlintCheck` and `detekt` run in a dedicated `static-analysis` CI job on every push and pull
-  request; a violation fails the job before tests or the build run
+- `ktlintCheck` and `detekt` run in a dedicated `static-analysis` CI job, in parallel with the
+  `test-build` job, on every push and pull request; a violation fails the `static-analysis` job
+  independently of the test/build result
 
 ### Static Analysis Policy
 
@@ -507,8 +508,8 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - GitHub Actions, two parallel jobs on every push/PR to `main`:
     - `static-analysis` — ktlint + detekt
     - `test-build` — JVM unit tests, Android Lint, debug build
-- ktlint/detekt reports (HTML) and test/lint reports uploaded as workflow artifacts (7-day
-  retention)
+- ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
+  reports are uploaded as workflow artifacts (7-day retention) when produced
 
 **Planned**
 
@@ -596,15 +597,17 @@ static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck →
 test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug
 ```
 
-`ktlintCheck` and `detekt` run across all modules and fail the `static-analysis` job on any enabled
-rule violation — no detekt baseline is used, so every finding must be resolved or narrowly
-suppressed with an explicit rationale. Compose `@Composable` functions use annotation-scoped naming
-exceptions, while the existing underscore-based base package retains an explicit package-naming
-exemption.
+`static-analysis` and `test-build` run as independent, parallel jobs — a `static-analysis` failure
+does not block or gate `test-build`. `ktlintCheck` and `detekt` run across all modules and fail the
+`static-analysis` job on any enabled rule violation — no detekt baseline is used, so every finding
+must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable` functions
+use annotation-scoped naming exceptions, while the existing underscore-based base package retains an
+explicit package-naming exemption.
 
-ktlint/detekt reports, test reports, and Android Lint reports are all uploaded as workflow artifacts
-(7-day retention) regardless of whether the run passes or fails, so a failure can be diagnosed
-directly from the Actions run without reproducing it locally.
+ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), test reports, and
+Android Lint reports are uploaded as workflow artifacts (7-day retention) whenever the corresponding
+task produces them, regardless of whether the job passes or fails, so a failure can usually be
+diagnosed directly from the Actions run without reproducing it locally.
 
 Instrumented tests (`connectedDebugAndroidTest`) are not run in this workflow, since Android
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
