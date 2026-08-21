@@ -30,4 +30,11 @@ subprojects {
         config.setFrom(rootProject.files("config/detekt/detekt.yml"))
         // No baseline configured yet; decide after reviewing findings
     }
+    // Explicit report formats so CI has stable, predictable paths to collect as artifacts.
+    tasks.withType<Detekt>().configureEach {
+        reports {
+            html.required.set(true) // human-readable, uploaded as a CI artifact
+            sarif.required.set(true) // machine-readable, enables GitHub code scanning annotations
+        }
+    }
 }

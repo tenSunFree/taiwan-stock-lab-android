@@ -86,8 +86,8 @@ purposes.
 - Compose-based market summary bar (`MarketSummaryBar`) embedded into the XML screen via
   `ComposeView`, showing advancing/declining/unchanged stock counts computed by a pure,
   independently-testable function
-- GitHub Actions CI running JVM unit tests, Android Lint, and a debug build on every push to `main`
-  and every pull request
+- GitHub Actions CI running ktlint, detekt, JVM unit tests, Android Lint, and a debug build on every
+  push to `main` and every pull request, split into parallel `static-analysis` and `test-build` jobs
 - JVM unit tests and Android instrumentation tests
 - ktlint (14.2.0) and detekt (2.0.0-alpha.5) configured across all modules from the root Gradle
   build, with formatting applied and all enabled rules passing
@@ -99,7 +99,6 @@ purposes.
 
 - Dark mode verification pass
 - Configuration-change support verification
-- ktlint / detekt CI integration
 - Crash reporting and observability
 
 ---
@@ -237,7 +236,8 @@ SingletonComponent
 constructors. `:app` assembles the complete object graph through explicit `@Provides` modules,
 organized by responsibility rather than by layer: `DatabaseModule` only provides Room-specific
 types (`StockDatabase`, `StockDao`), while `StockRepositoryModule` provides both data sources
-(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them. The
+(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them.
+The
 presentation layer (`StockListViewModel`) is the one exception to the "no Hilt in feature classes"
 rule — see below.
 
@@ -471,7 +471,9 @@ feature/stocklist/
   annotation-scoped naming exception rather than disabling the rule project-wide
 - The existing underscore-based base package retains an explicit `PackageNaming` exception
 - All enabled ktlint and detekt rules pass with zero findings and no detekt baseline
-- CI enforcement is in progress — see [Roadmap](#roadmap)
+- `ktlintCheck` and `detekt` run in a dedicated `static-analysis` CI job, in parallel with the
+  `test-build` job, on every push and pull request; a violation fails the `static-analysis` job
+  independently of the test/build result
 
 ### Static Analysis Policy
 
@@ -503,12 +505,15 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 
 **CI/CD**
 
-- GitHub Actions (test, lint, build on every push/PR to `main`)
+- GitHub Actions, two parallel jobs on every push/PR to `main`:
+    - `static-analysis` — ktlint + detekt
+    - `test-build` — JVM unit tests, Android Lint, debug build
+- ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
+  reports are uploaded as workflow artifacts (7-day retention) when produced
 
 **Planned**
 
 - Espresso UI tests
-- ktlint / detekt CI enforcement
 - Firebase Crashlytics
 - LeakCanary
 
@@ -585,24 +590,28 @@ computeMarketSummary_returnsAllZeroForEmptyList
 ## Continuous Integration
 
 Every push to `main` and every pull request triggers a GitHub Actions workflow
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) with two parallel jobs:
 
 ```text
-checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug
+static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck → detekt
+test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug
 ```
 
-Test and lint HTML reports are uploaded as workflow artifacts (7-day retention) regardless of
-whether the run passes or fails, so a failure can be diagnosed directly from the Actions run without
-reproducing it locally.
+`static-analysis` and `test-build` run as independent, parallel jobs — a `static-analysis` failure
+does not block or gate `test-build`. `ktlintCheck` and `detekt` run across all modules and fail the
+`static-analysis` job on any enabled rule violation — no detekt baseline is used, so every finding
+must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable` functions
+use annotation-scoped naming exceptions, while the existing underscore-based base package retains an
+explicit package-naming exemption.
 
-`ktlintCheck` and `detekt` are configured across all modules and currently pass all enabled rules
-without a detekt baseline. Compose `@Composable` functions use annotation-scoped naming exceptions,
-while the existing underscore-based base package retains an explicit package-naming exemption.
+ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), test reports, and
+Android Lint reports are uploaded as workflow artifacts (7-day retention) whenever the corresponding
+task produces them, regardless of whether the job passes or fails, so a failure can usually be
+diagnosed directly from the Actions run without reproducing it locally.
 
-These checks are not yet wired into the GitHub Actions workflow — that is the next quality-tooling
-step. Instrumented tests (`connectedDebugAndroidTest`) are also not run in this workflow, since
-Android emulators in CI add meaningful setup and boot-time complexity and are planned as a separate
-workflow rather than blocking every push.
+Instrumented tests (`connectedDebugAndroidTest`) are not run in this workflow, since Android
+emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
+rather than blocking every push.
 
 ---
 
@@ -624,27 +633,27 @@ push and pull request against `main`.
 
 ## Roadmap
 
-| Stage                    | Scope                                                                                                 | Status    |
-|--------------------------|-------------------------------------------------------------------------------------------------------|-----------|
-| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                                    | ✅ Done    |
-| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                               | ✅ Done    |
-| TWSE remote layer        | API service and DTOs                                                                                  | ✅ Done    |
-| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                             | ✅ Done    |
-| Persistence              | Room 3, DAO, schema export                                                                            | ✅ Done    |
-| Offline-first repository | Room source of truth, refresh/cache policy                                                            | ✅ Done    |
-| Dependency injection     | Hilt composition root                                                                                 | ✅ Done    |
-| Presentation state       | ViewModel + MVI-style UDF                                                                             | ✅ Done    |
-| XML UI                   | Stock list, sorting, detail dialog                                                                    | ✅ Done    |
-| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration            | ✅ Done    |
-| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                                     | ✅ Done    |
-| Quality tooling          | GitHub Actions CI (test, lint, build)                                                                 | ✅ Done    |
-| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                                  | ✅ Done    |
-| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                                  | ✅ Done    |
-| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)                   | ✅ Done    |
-| Quality tooling          | ktlint, detekt — CI integration                                                                       | ⏳ Next    |
-| Observability            | Crashlytics, LeakCanary                                                                               | ⏳ Planned |
-| Polish                   | Dark mode, rotation verification, animations                                                          | ⏳ Planned |
-| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                                      | ⏳ Future  |
+| Stage                    | Scope                                                                                      | Status    |
+|--------------------------|--------------------------------------------------------------------------------------------|-----------|
+| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                         | ✅ Done    |
+| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                    | ✅ Done    |
+| TWSE remote layer        | API service and DTOs                                                                       | ✅ Done    |
+| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                  | ✅ Done    |
+| Persistence              | Room 3, DAO, schema export                                                                 | ✅ Done    |
+| Offline-first repository | Room source of truth, refresh/cache policy                                                 | ✅ Done    |
+| Dependency injection     | Hilt composition root                                                                      | ✅ Done    |
+| Presentation state       | ViewModel + MVI-style UDF                                                                  | ✅ Done    |
+| XML UI                   | Stock list, sorting, detail dialog                                                         | ✅ Done    |
+| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done    |
+| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                          | ✅ Done    |
+| Quality tooling          | GitHub Actions CI (test, lint, build)                                                      | ✅ Done    |
+| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                       | ✅ Done    |
+| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                       | ✅ Done    |
+| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)        | ✅ Done    |
+| Quality tooling          | ktlint, detekt — CI integration                                                            | ✅ Done    |
+| Observability            | Crashlytics, LeakCanary                                                                    | ⏳ Planned |
+| Polish                   | Dark mode, rotation verification, animations                                               | ⏳ Planned |
+| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                           | ⏳ Future  |
 
 ---
 
