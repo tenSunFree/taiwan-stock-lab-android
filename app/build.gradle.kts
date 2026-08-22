@@ -1,16 +1,16 @@
-// Firebase is optional for this public repository.
-//
-// A local developer who places `google-services.json` in this module gets Crashlytics +
-// Analytics. Contributors and CI without that project-specific configuration still build and run
-// the app normally — Firebase is omitted entirely rather than included in a half-configured state.
-val firebaseConfigured = file("google-services.json").isFile
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.compose.compiler)
 }
+
+// Firebase is optional for this public repository.
+//
+// A local developer who places `google-services.json` in this module gets Crashlytics +
+// Analytics. Contributors and CI without that project-specific configuration still build and run
+// the app normally — Firebase is omitted entirely rather than included in a half-configured state.
+val firebaseConfigured = file("google-services.json").isFile
 
 // Applied only when local Firebase configuration exists. Plugin versions are declared in the root
 // build.gradle.kts with `apply false`, so they're available here without duplicating them.
