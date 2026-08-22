@@ -12,6 +12,10 @@ plugins {
     alias(libs.plugins.hilt) apply false
     alias(libs.plugins.ktlint) apply false
     alias(libs.plugins.detekt) apply false
+    // Firebase plugins are declared here (with their versions) so app/build.gradle.kts can apply
+    // them by ID conditionally, without duplicating a version declaration.
+    alias(libs.plugins.google.services) apply false
+    alias(libs.plugins.firebase.crashlytics.plugin) apply false
 }
 
 subprojects {
@@ -34,7 +38,8 @@ subprojects {
     tasks.withType<Detekt>().configureEach {
         reports {
             html.required.set(true) // human-readable, uploaded as a CI artifact
-            sarif.required.set(true) // machine-readable, enables GitHub code scanning annotations
+            checkstyle.required.set(true) // machine-readable, e.g. for future dashboards
+            sarif.required.set(true) // optional: enables GitHub code scanning annotations
         }
     }
 }

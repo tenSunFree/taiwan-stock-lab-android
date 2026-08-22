@@ -9,6 +9,7 @@
 [![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
 [![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK-FF9800)](#testing)
 [![Code Quality](https://img.shields.io/badge/Code%20Quality-ktlint%20%2B%20detekt-blueviolet)](#tech-stack)
+[![Observability](https://img.shields.io/badge/Observability-Crashlytics%20%2B%20LeakCanary-FFCA28?logo=firebase&logoColor=black)](#tech-stack)
 [![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
 [![Build](https://img.shields.io/badge/Build-Gradle%20Version%20Catalog-02303A?logo=gradle&logoColor=white)](#tech-stack)
 
@@ -94,12 +95,17 @@ purposes.
 - Compose naming conventions handled through annotation-scoped exceptions rather than disabling
   function-naming checks project-wide
 - Static analysis passes without a detekt baseline
+- Firebase Crashlytics for configured builds, with crash collection controlled per build type via
+  an `AndroidManifest.xml` meta-data placeholder rather than a runtime code path — Firebase is
+  omitted entirely (not just disabled) when `google-services.json` isn't present, so a clone
+  without Firebase configured still builds and runs normally
+- LeakCanary 2.14 included through `debugImplementation` only, for automatic memory-leak detection
+  with no `Application`-level code required
 
 ### Planned
 
 - Dark mode verification pass
 - Configuration-change support verification
-- Crash reporting and observability
 
 ---
 
@@ -492,6 +498,25 @@ quality-tooling scope.
 No detekt baseline is used. Existing findings are either resolved, narrowly suppressed with an
 explicit rationale, or documented as deliberate project-level rule exceptions.
 
+**Observability**
+
+- Firebase Crashlytics for production crash, non-fatal error, and ANR reporting
+- Firebase Analytics included for Crashlytics breadcrumb context
+- Firebase configuration is optional for this public repository:
+    - `app/google-services.json` present → the `google-services` and `firebase-crashlytics`
+      Gradle plugins are applied and the Firebase SDKs are included
+    - file absent → Firebase is omitted entirely; the project still builds and runs normally,
+      just without crash reporting
+- Crash collection is controlled per build type through the
+  `firebase_crashlytics_collection_enabled`
+  manifest meta-data, set via `manifestPlaceholders` in `app/build.gradle.kts` — disabled in debug
+  builds so local development crashes never pollute production crash-free-user metrics, enabled in
+  release builds
+- `TaiwanStockApplication` has no Firebase-specific code; collection state is entirely a build-time
+  concern (plugin application + manifest placeholder), not a runtime branch
+- LeakCanary (2.14), `debugImplementation` only — automatically detects leaked `Activity`,
+  `Fragment`, `View`, `ViewModel`, and `Service` instances with no code changes required
+
 **Testing**
 
 - JUnit 5
@@ -514,8 +539,6 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 **Planned**
 
 - Espresso UI tests
-- Firebase Crashlytics
-- LeakCanary
 
 ---
 
@@ -651,7 +674,7 @@ push and pull request against `main`.
 | Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                       | ✅ Done    |
 | Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)        | ✅ Done    |
 | Quality tooling          | ktlint, detekt — CI integration                                                            | ✅ Done    |
-| Observability            | Crashlytics, LeakCanary                                                                    | ⏳ Planned |
+| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                     | ✅ Done    |
 | Polish                   | Dark mode, rotation verification, animations                                               | ⏳ Planned |
 | Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                           | ⏳ Future  |
 
