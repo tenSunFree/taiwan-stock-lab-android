@@ -15,6 +15,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Taiwanstocklabandroid">
 
+        <!--
+            Debug builds set this placeholder to false and release builds set it to true, both in
+            app/build.gradle.kts. When Firebase isn't configured (no google-services.json), the
+            Crashlytics SDK isn't included at all, so this metadata is simply unused.
+        -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="${crashlyticsCollectionEnabled}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

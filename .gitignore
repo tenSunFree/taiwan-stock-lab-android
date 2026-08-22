@@ -21,3 +21,11 @@ local.properties
 
 # Log/profile files
 *.log
+
+# Firebase
+#
+# Project-specific Firebase client configuration, intentionally excluded so this public
+# repository isn't tied to one maintainer's Firebase project. The values in this file are not
+# treated as secret credentials — authorization is still enforced through Firebase Security
+# Rules, App Check, and API key restrictions, not through keeping this file private.
+google-services.json
