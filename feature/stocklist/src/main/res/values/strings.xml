@@ -8,5 +8,12 @@
     <string name="stock_card_transaction_count">成交筆數</string>
     <string name="stock_card_trade_volume">成交股數</string>
     <string name="stock_card_trade_value">成交金額</string>
+    <string name="sort_descending">依股票代號降序</string>
+    <string name="sort_ascending">依股票代號升序</string>
+    <string name="dialog_confirm">確定</string>
+    <string name="stock_detail_title">%1$s %2$s</string>
+    <string name="stock_detail_pe_ratio">本益比：%1$s</string>
+    <string name="stock_detail_dividend_yield">殖利率(%%)：%1$s</string>
+    <string name="stock_detail_pb_ratio">股價淨值比：%1$s</string>
 </resources>
 

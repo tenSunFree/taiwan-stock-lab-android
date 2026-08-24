@@ -15,21 +15,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.android.material.bottomsheet.BottomSheetDialog
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 import com.sun.taiwan_stock_lab_android.databinding.ActivityMainBinding
-import com.sun.taiwan_stock_lab_android.databinding.BottomSheetSortBinding
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockItemAnimator
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockListAdapter
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.compose.MarketSummaryBar
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiState
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.dialog.SortBottomSheetFragment
+import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.dialog.StockDetailDialogFragment
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.computeMarketSummary
-import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.StockUiModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -87,11 +86,9 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = this@MainActivity.adapter
             setHasFixedSize(true)
-            // Diagnostic: disabling the default ItemAnimator to determine
-            // whether large-scale DiffUtil move animations (from a full
-            // stock-code sort reversal across ~1000+ rows) were responsible
-            // for the "flies to the bottom" visual artifact on sort change.
-            itemAnimator = null
+            // See StockItemAnimator: keeps ordinary add/remove/change animations, skips only the
+            // large-scale move animation produced by a full stock-code sort reversal.
+            itemAnimator = StockItemAnimator()
         }
     }
 
@@ -154,48 +151,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleEffect(effect: StockListUiEffect) {
         when (effect) {
-            is StockListUiEffect.ShowStockDetail -> showStockDetailDialog(effect.stock)
+            is StockListUiEffect.ShowStockDetail -> showStockDetail(effect)
             is StockListUiEffect.ShowError -> showError(effect.message)
         }
     }
 
     private fun showSortBottomSheet() {
-        val dialog = BottomSheetDialog(this)
-        val sheetBinding = BottomSheetSortBinding.inflate(layoutInflater)
-        val currentDirection = viewModel.uiState.value.sortDirection
-        val checkedId =
-            when (currentDirection) {
-                SortDirection.DESCENDING -> R.id.radioSortDescending
-                SortDirection.ASCENDING -> R.id.radioSortAscending
-            }
-        sheetBinding.radioGroupSort.check(checkedId)
-        sheetBinding.radioGroupSort.setOnCheckedChangeListener { _, checkedId ->
-            val selectedDirection =
-                when (checkedId) {
-                    R.id.radioSortDescending -> SortDirection.DESCENDING
-                    R.id.radioSortAscending -> SortDirection.ASCENDING
-                    else -> return@setOnCheckedChangeListener
-                }
-            dialog.dismiss()
-            if (selectedDirection == currentDirection) return@setOnCheckedChangeListener
-            binding.recyclerViewStocks.stopScroll()
-            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(selectedDirection))
-        }
-        dialog.setContentView(sheetBinding.root)
-        dialog.show()
+        // showNow() commits synchronously, so this guard is reliable even against rapid
+        // double-taps: show()'s commit() is queued on the main thread and could let a second
+        // call slip past findFragmentByTag() before the first transaction has executed.
+        if (supportFragmentManager.findFragmentByTag(SortBottomSheetFragment.TAG) != null) return
+        SortBottomSheetFragment().showNow(supportFragmentManager, SortBottomSheetFragment.TAG)
     }
 
-    private fun showStockDetailDialog(stock: StockUiModel) {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(getString(R.string.stock_detail_title, stock.name, stock.code))
-            .setMessage(
-                listOf(
-                    getString(R.string.stock_detail_pe_ratio, stock.peRatio),
-                    getString(R.string.stock_detail_dividend_yield, stock.dividendYield),
-                    getString(R.string.stock_detail_pb_ratio, stock.pbRatio),
-                ).joinToString("\n"),
-            ).setPositiveButton(R.string.dialog_confirm, null)
-            .show()
+    private fun showStockDetail(effect: StockListUiEffect.ShowStockDetail) {
+        // See showSortBottomSheet() — showNow() for the same reason.
+        if (supportFragmentManager.findFragmentByTag(StockDetailDialogFragment.TAG) != null) return
+        StockDetailDialogFragment
+            .newInstance(effect.stock)
+            .showNow(supportFragmentManager, StockDetailDialogFragment.TAG)
     }
 
     private fun showError(message: String) {

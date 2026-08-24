@@ -35,6 +35,7 @@ dependencies {
     ksp(libs.androidx.room3.compiler)
     ksp(libs.moshi.kotlin.codegen)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.recyclerview)

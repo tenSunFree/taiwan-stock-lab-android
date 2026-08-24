@@ -34,8 +34,9 @@ purposes.
 ## Preview
 
 <p align="left">
-  <img src="https://i.postimg.cc/3Ryx3SPN/Screenshot-20260817-091035.png" width="160"/>
-  <img src="https://i.postimg.cc/SsXxmTw8/Screenshot-20260817-091054.png" width="160"/>
+  <img src="https://i.postimg.cc/FsX9CVGG/Screenshot-20260824-033530.png" width="160" alt="Stock list screen showing sorted stocks with price coloring and the market summary bar"/>
+  <img src="https://i.postimg.cc/CLpFrsJv/Screenshot-20260824-033540.png" width="160" alt="Sort direction bottom sheet with ascending and descending options"/>
+  <img src="https://i.postimg.cc/3ws6rnk1/Screenshot-20260824-034002.png" width="160" alt="Stock detail dialog showing P/E ratio, dividend yield, and P/B ratio"/>
 </p>
 
 ---
@@ -101,11 +102,15 @@ purposes.
   without Firebase configured still builds and runs normally
 - LeakCanary 2.14 included through `debugImplementation` only, for automatic memory-leak detection
   with no `Application`-level code required
-
-### Planned
-
-- Dark mode verification pass
-- Configuration-change support verification
+- Sort selector and stock-detail dialog implemented as `BottomSheetDialogFragment` /
+  `DialogFragment` managed by `FragmentManager`, so both survive configuration changes (e.g.
+  rotation) instead of being dismissed when the host Activity is recreated; the stock-detail
+  dialog stores the values it needs as Fragment arguments rather than re-resolving them from the
+  ViewModel, so it also survives process death correctly
+- Custom `StockItemAnimator` keeps ordinary add/remove/change item animations while skipping only
+  move animations, replacing a blanket `itemAnimator = null`
+- Dark mode verified across XML and Compose UI, with no hardcoded colors bypassing the day/night
+  system
 
 ---
 
@@ -242,8 +247,7 @@ SingletonComponent
 constructors. `:app` assembles the complete object graph through explicit `@Provides` modules,
 organized by responsibility rather than by layer: `DatabaseModule` only provides Room-specific
 types (`StockDatabase`, `StockDao`), while `StockRepositoryModule` provides both data sources
-(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them.
-The
+(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them. The
 presentation layer (`StockListViewModel`) is the one exception to the "no Hilt in feature classes"
 rule — see below.
 
@@ -301,8 +305,8 @@ MainActivity
  ├── "最後更新：..." timestamp label
  ├── SwipeRefreshLayout
  │      └── RecyclerView (StockListAdapter / ListAdapter + DiffUtil)
- ├── BottomSheetDialog (single-selection RadioGroup for sort direction)
- └── MaterialAlertDialogBuilder (stock detail)
+ ├── SortBottomSheetFragment (single-selection RadioGroup for sort direction)
+ └── StockDetailDialogFragment (stock detail)
 ```
 
 `StockUiModel`, `PricePosition` (`ABOVE_AVERAGE`/`BELOW_AVERAGE`/`EQUAL`/`UNKNOWN`),
@@ -315,14 +319,41 @@ since "closing price above the monthly average" and "the stock rose today" are d
 `StockListAdapter` uses `ViewBinding` and `DiffUtil.ItemCallback` (item identity by stock code,
 content equality by full `StockUiModel`) for efficient list updates.
 
-`RecyclerView.itemAnimator` is disabled (`null`). A full stock-code sort reversal reorders nearly
-the entire dataset (1,000+ rows), which `DiffUtil` interprets as a large batch of item moves; the
-default `ItemAnimator` playing move animations for all of them was visually indistinguishable from
-the list scrolling on its own. Disabling it keeps `DiffUtil`'s minimal-update behavior while
-removing the animation — an appropriate trade-off for a data-dense financial list where per-item
-move animation carries little UX value. On a sort-direction change, the list is unconditionally
-reset to the top (`scrollToPosition(0)`) once the newly sorted data is committed via `submitList`'s
-callback.
+`RecyclerView.itemAnimator` uses a custom `StockItemAnimator` rather than the default
+`ItemAnimator` or a blanket `itemAnimator = null`. A full stock-code sort reversal reorders nearly
+the entire dataset (1,000+ rows), which `DiffUtil` interprets as a large batch of item-move
+operations; animating every one of them was visually indistinguishable from the list scrolling on
+its own. `StockItemAnimator` overrides only `animateMove` to skip that specific category, while
+ordinary add/remove/change animations (e.g. new stocks appearing on refresh, individual price
+updates) are kept — a narrower trade-off than disabling item animations entirely. On a
+sort-direction change, the list is additionally reset to the top (`scrollToPosition(0)`) once the
+newly sorted data is committed via `submitList`'s callback.
+
+Both the sort selector and the stock-detail dialog are `FragmentManager`-hosted
+(`BottomSheetDialogFragment` / `DialogFragment`) rather than plain `BottomSheetDialog` /
+`MaterialAlertDialogBuilder` instances attached directly to the Activity. A plain `Dialog` is
+dismissed automatically when its hosting Activity is destroyed, so rotating the screen while either
+was open used to close it with no way back; `FragmentManager` saves and restores both Fragments
+automatically across configuration changes:
+
+- `SortBottomSheetFragment` reads the current sort direction from the shared, activity-scoped
+  `StockListViewModel` (`by activityViewModels()`) every time its view is (re)created, so a
+  restored instance after rotation always reflects the latest state rather than a stale snapshot.
+  Selecting an option uses an `OnClickListener` on each `MaterialRadioButton` rather than
+  `RadioGroup.OnCheckedChangeListener` — the latter only fires when the checked state actually
+  changes, so tapping the already-selected option would otherwise leave the sheet open with no
+  feedback.
+- `StockDetailDialogFragment` stores the five values it needs to render (`code`, `name`, `peRatio`,
+  `dividendYield`, `pbRatio`) as Fragment arguments instead of re-resolving them from the ViewModel
+  on (re)creation. Fragment arguments are saved and restored by `FragmentManager` across both
+  configuration changes and process death, so the dialog renders correctly even if it's restored
+  before the stock list has finished reloading from Room — without requiring `StockUiModel` itself
+  to be made `Parcelable`.
+- Both `MainActivity.showSortBottomSheet()` and `showStockDetail()` guard against a
+  `findFragmentByTag()` hit before calling `showNow()` rather than `show()` — `show()`'s underlying
+  `commit()` is queued asynchronously on the main thread, so a rapid double-tap could pass the
+  guard before the first transaction has actually executed; `showNow()` commits synchronously,
+  making the guard reliable.
 
 ### Compose Interoperability
 
@@ -382,7 +413,8 @@ feature/stocklist/
 └── presentation/
     ├── StockListViewModel.kt
     ├── adapter/
-    │   └── StockListAdapter.kt
+    │   ├── StockListAdapter.kt
+    │   └── StockItemAnimator.kt
     ├── compose/
     │   └── MarketSummaryBar.kt
     ├── contract/
@@ -390,6 +422,9 @@ feature/stocklist/
     │   ├── StockListUiState.kt
     │   ├── StockListUiEvent.kt
     │   └── StockListUiEffect.kt
+    ├── dialog/
+    │   ├── SortBottomSheetFragment.kt
+    │   └── StockDetailDialogFragment.kt
     ├── model/
     │   ├── StockUiModel.kt
     │   ├── MarketSummary.kt
@@ -454,10 +489,13 @@ feature/stocklist/
 **UI**
 
 - XML layouts + ViewBinding
-- `RecyclerView` + `ListAdapter` / `DiffUtil`
+- `RecyclerView` + `ListAdapter` / `DiffUtil` + custom `StockItemAnimator`
 - `SwipeRefreshLayout`
-- Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialog`, `RadioGroup`/
-  `MaterialRadioButton`, `MaterialAlertDialogBuilder`)
+- Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialogFragment`,
+  `RadioGroup`/`MaterialRadioButton`)
+- Fragment KTX (`androidx.fragment:fragment-ktx`), for `BottomSheetDialogFragment` /
+  `DialogFragment` (`activityViewModels()`, `Fragment` arguments) managed by `FragmentManager` so
+  transient UI survives configuration changes and process death
 - `repeatOnLifecycle` for lifecycle-aware `Flow` collection
 
 **Compose Interoperability**
@@ -507,8 +545,7 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
       Gradle plugins are applied and the Firebase SDKs are included
     - file absent → Firebase is omitted entirely; the project still builds and runs normally,
       just without crash reporting
-- Crash collection is controlled per build type through the
-  `firebase_crashlytics_collection_enabled`
+- Crash collection is controlled per build type through the `firebase_crashlytics_collection_enabled`
   manifest meta-data, set via `manifestPlaceholders` in `app/build.gradle.kts` — disabled in debug
   builds so local development crashes never pollute production crash-free-user metrics, enabled in
   release builds
@@ -656,27 +693,27 @@ push and pull request against `main`.
 
 ## Roadmap
 
-| Stage                    | Scope                                                                                      | Status    |
-|--------------------------|--------------------------------------------------------------------------------------------|-----------|
-| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                         | ✅ Done    |
-| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                    | ✅ Done    |
-| TWSE remote layer        | API service and DTOs                                                                       | ✅ Done    |
-| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                  | ✅ Done    |
-| Persistence              | Room 3, DAO, schema export                                                                 | ✅ Done    |
-| Offline-first repository | Room source of truth, refresh/cache policy                                                 | ✅ Done    |
-| Dependency injection     | Hilt composition root                                                                      | ✅ Done    |
-| Presentation state       | ViewModel + MVI-style UDF                                                                  | ✅ Done    |
-| XML UI                   | Stock list, sorting, detail dialog                                                         | ✅ Done    |
-| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration | ✅ Done    |
-| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                          | ✅ Done    |
-| Quality tooling          | GitHub Actions CI (test, lint, build)                                                      | ✅ Done    |
-| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                       | ✅ Done    |
-| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                       | ✅ Done    |
-| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)        | ✅ Done    |
-| Quality tooling          | ktlint, detekt — CI integration                                                            | ✅ Done    |
-| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                     | ✅ Done    |
-| Polish                   | Dark mode, rotation verification, animations                                               | ⏳ Planned |
-| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                           | ⏳ Future  |
+| Stage                    | Scope                                                                                                 | Status    |
+|--------------------------|-------------------------------------------------------------------------------------------------------|-----------|
+| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                                    | ✅ Done    |
+| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                               | ✅ Done    |
+| TWSE remote layer        | API service and DTOs                                                                                  | ✅ Done    |
+| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                             | ✅ Done    |
+| Persistence              | Room 3, DAO, schema export                                                                            | ✅ Done    |
+| Offline-first repository | Room source of truth, refresh/cache policy                                                            | ✅ Done    |
+| Dependency injection     | Hilt composition root                                                                                 | ✅ Done    |
+| Presentation state       | ViewModel + MVI-style UDF                                                                             | ✅ Done    |
+| XML UI                   | Stock list, sorting, detail dialog                                                                    | ✅ Done    |
+| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration            | ✅ Done    |
+| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                                     | ✅ Done    |
+| Quality tooling          | GitHub Actions CI (test, lint, build)                                                                 | ✅ Done    |
+| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                                  | ✅ Done    |
+| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                                  | ✅ Done    |
+| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)                   | ✅ Done    |
+| Quality tooling          | ktlint, detekt — CI integration                                                                       | ✅ Done    |
+| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                                | ✅ Done    |
+| Polish                   | Dark mode verification, rotation-safe dialogs (`FragmentManager`), narrower item animations           | ✅ Done    |
+| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                                      | ⏳ Future  |
 
 ---
 
@@ -783,13 +820,11 @@ taiwan-stock-lab-android/
 │       │   │       └── StockRepositoryModule.kt
 │       │   ├── res/
 │       │   │   ├── layout/
-│       │   │   │   ├── activity_main.xml
-│       │   │   │   └── bottom_sheet_sort.xml
+│       │   │   │   └── activity_main.xml
 │       │   │   ├── menu/
 │       │   │   │   └── menu_stock_list.xml
 │       │   │   ├── drawable/
-│       │   │   │   ├── ic_sort.xml
-│       │   │   │   └── bg_bottom_sheet_handle.xml
+│       │   │   │   └── ic_sort.xml
 │       │   │   └── values/
 │       │   │       └── strings.xml
 │       │   └── AndroidManifest.xml
@@ -837,10 +872,16 @@ taiwan-stock-lab-android/
 │           │   │       ├── adapter/
 │           │   │       ├── compose/
 │           │   │       ├── contract/
+│           │   │       ├── dialog/
+│           │   │       │   ├── SortBottomSheetFragment.kt
+│           │   │       │   └── StockDetailDialogFragment.kt
 │           │   │       ├── model/
 │           │   │       └── mapper/
 │           │   └── res/
-│           │       ├── layout/item_stock_card.xml
+│           │       ├── layout/
+│           │       │   ├── item_stock_card.xml
+│           │       │   └── bottom_sheet_sort.xml
+│           │       ├── drawable/bg_bottom_sheet_handle.xml
 │           │       └── values/strings.xml
 │           │
 │           ├── test/kotlin/
