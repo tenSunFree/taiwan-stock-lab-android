@@ -157,17 +157,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSortBottomSheet() {
-        // Guards against a double-tap on the sort menu item opening two overlapping sheets.
+        // showNow() commits synchronously, so this guard is reliable even against rapid
+        // double-taps: show()'s commit() is queued on the main thread and could let a second
+        // call slip past findFragmentByTag() before the first transaction has executed.
         if (supportFragmentManager.findFragmentByTag(SortBottomSheetFragment.TAG) != null) return
-        SortBottomSheetFragment().show(supportFragmentManager, SortBottomSheetFragment.TAG)
+        SortBottomSheetFragment().showNow(supportFragmentManager, SortBottomSheetFragment.TAG)
     }
 
     private fun showStockDetail(effect: StockListUiEffect.ShowStockDetail) {
-        // Guards against rapid double-tapping a card opening two overlapping dialogs.
+        // See showSortBottomSheet() — showNow() for the same reason.
         if (supportFragmentManager.findFragmentByTag(StockDetailDialogFragment.TAG) != null) return
         StockDetailDialogFragment
             .newInstance(effect.stock)
-            .show(supportFragmentManager, StockDetailDialogFragment.TAG)
+            .showNow(supportFragmentManager, StockDetailDialogFragment.TAG)
     }
 
     private fun showError(message: String) {

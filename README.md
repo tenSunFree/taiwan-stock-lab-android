@@ -34,9 +34,9 @@ purposes.
 ## Preview
 
 <p align="left">
-  <img src="https://i.postimg.cc/FsX9CVGG/Screenshot-20260824-033530.png" width="160"/>
-  <img src="https://i.postimg.cc/CLpFrsJv/Screenshot-20260824-033540.png" width="160"/>
-  <img src="https://i.postimg.cc/3ws6rnk1/Screenshot-20260824-034002.png" width="160"/>
+  <img src="https://i.postimg.cc/FsX9CVGG/Screenshot-20260824-033530.png" width="160" alt="Stock list screen showing sorted stocks with price coloring and the market summary bar"/>
+  <img src="https://i.postimg.cc/CLpFrsJv/Screenshot-20260824-033540.png" width="160" alt="Sort direction bottom sheet with ascending and descending options"/>
+  <img src="https://i.postimg.cc/3ws6rnk1/Screenshot-20260824-034002.png" width="160" alt="Stock detail dialog showing P/E ratio, dividend yield, and P/B ratio"/>
 </p>
 
 ---
@@ -247,8 +247,7 @@ SingletonComponent
 constructors. `:app` assembles the complete object graph through explicit `@Provides` modules,
 organized by responsibility rather than by layer: `DatabaseModule` only provides Room-specific
 types (`StockDatabase`, `StockDao`), while `StockRepositoryModule` provides both data sources
-(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them.
-The
+(`TwseRemoteDataSource`, `StockLocalDataSource`) and the `StockRepository` that coordinates them. The
 presentation layer (`StockListViewModel`) is the one exception to the "no Hilt in feature classes"
 rule — see below.
 
@@ -340,6 +339,10 @@ automatically across configuration changes:
 - `SortBottomSheetFragment` reads the current sort direction from the shared, activity-scoped
   `StockListViewModel` (`by activityViewModels()`) every time its view is (re)created, so a
   restored instance after rotation always reflects the latest state rather than a stale snapshot.
+  Selecting an option uses an `OnClickListener` on each `MaterialRadioButton` rather than
+  `RadioGroup.OnCheckedChangeListener` — the latter only fires when the checked state actually
+  changes, so tapping the already-selected option would otherwise leave the sheet open with no
+  feedback.
 - `StockDetailDialogFragment` stores the five values it needs to render (`code`, `name`, `peRatio`,
   `dividendYield`, `pbRatio`) as Fragment arguments instead of re-resolving them from the ViewModel
   on (re)creation. Fragment arguments are saved and restored by `FragmentManager` across both
@@ -347,8 +350,10 @@ automatically across configuration changes:
   before the stock list has finished reloading from Room — without requiring `StockUiModel` itself
   to be made `Parcelable`.
 - Both `MainActivity.showSortBottomSheet()` and `showStockDetail()` guard against a
-  `findFragmentByTag()` hit before calling `show()`, so a double-tap can't open two overlapping
-  instances of either dialog.
+  `findFragmentByTag()` hit before calling `showNow()` rather than `show()` — `show()`'s underlying
+  `commit()` is queued asynchronously on the main thread, so a rapid double-tap could pass the
+  guard before the first transaction has actually executed; `showNow()` commits synchronously,
+  making the guard reliable.
 
 ### Compose Interoperability
 
@@ -540,8 +545,7 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
       Gradle plugins are applied and the Firebase SDKs are included
     - file absent → Firebase is omitted entirely; the project still builds and runs normally,
       just without crash reporting
-- Crash collection is controlled per build type through the
-  `firebase_crashlytics_collection_enabled`
+- Crash collection is controlled per build type through the `firebase_crashlytics_collection_enabled`
   manifest meta-data, set via `manifestPlaceholders` in `app/build.gradle.kts` — disabled in debug
   builds so local development crashes never pollute production crash-free-user metrics, enabled in
   release builds
@@ -689,27 +693,27 @@ push and pull request against `main`.
 
 ## Roadmap
 
-| Stage                    | Scope                                                                                       | Status   |
-|--------------------------|---------------------------------------------------------------------------------------------|----------|
-| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                          | ✅ Done   |
-| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                     | ✅ Done   |
-| TWSE remote layer        | API service and DTOs                                                                        | ✅ Done   |
-| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                   | ✅ Done   |
-| Persistence              | Room 3, DAO, schema export                                                                  | ✅ Done   |
-| Offline-first repository | Room source of truth, refresh/cache policy                                                  | ✅ Done   |
-| Dependency injection     | Hilt composition root                                                                       | ✅ Done   |
-| Presentation state       | ViewModel + MVI-style UDF                                                                   | ✅ Done   |
-| XML UI                   | Stock list, sorting, detail dialog                                                          | ✅ Done   |
-| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration  | ✅ Done   |
-| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                           | ✅ Done   |
-| Quality tooling          | GitHub Actions CI (test, lint, build)                                                       | ✅ Done   |
-| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                        | ✅ Done   |
-| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                        | ✅ Done   |
-| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)         | ✅ Done   |
-| Quality tooling          | ktlint, detekt — CI integration                                                             | ✅ Done   |
-| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                      | ✅ Done   |
-| Polish                   | Dark mode verification, rotation-safe dialogs (`FragmentManager`), narrower item animations | ✅ Done   |
-| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                            | ⏳ Future |
+| Stage                    | Scope                                                                                                 | Status    |
+|--------------------------|-------------------------------------------------------------------------------------------------------|-----------|
+| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                                    | ✅ Done    |
+| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                               | ✅ Done    |
+| TWSE remote layer        | API service and DTOs                                                                                  | ✅ Done    |
+| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                             | ✅ Done    |
+| Persistence              | Room 3, DAO, schema export                                                                            | ✅ Done    |
+| Offline-first repository | Room source of truth, refresh/cache policy                                                            | ✅ Done    |
+| Dependency injection     | Hilt composition root                                                                                 | ✅ Done    |
+| Presentation state       | ViewModel + MVI-style UDF                                                                             | ✅ Done    |
+| XML UI                   | Stock list, sorting, detail dialog                                                                    | ✅ Done    |
+| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration            | ✅ Done    |
+| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                                     | ✅ Done    |
+| Quality tooling          | GitHub Actions CI (test, lint, build)                                                                 | ✅ Done    |
+| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                                  | ✅ Done    |
+| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                                  | ✅ Done    |
+| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)                   | ✅ Done    |
+| Quality tooling          | ktlint, detekt — CI integration                                                                       | ✅ Done    |
+| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                                | ✅ Done    |
+| Polish                   | Dark mode verification, rotation-safe dialogs (`FragmentManager`), narrower item animations           | ✅ Done    |
+| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                                      | ⏳ Future  |
 
 ---
 

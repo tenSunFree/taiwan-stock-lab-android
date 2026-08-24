@@ -33,6 +33,24 @@ class SortBottomSheetFragment : BottomSheetDialogFragment() {
     // matching accessor is public).
     private var binding: BottomSheetSortBinding? = null
 
+    // A click listener on each radio button, rather than RadioGroup.OnCheckedChangeListener.
+    // The latter only fires when the checked state actually changes, so tapping the option that
+    // is already selected would silently do nothing and leave the sheet open with no feedback.
+    private val onOptionClicked =
+        View.OnClickListener { view ->
+            val selectedDirection =
+                when (view.id) {
+                    R.id.radioSortDescending -> SortDirection.DESCENDING
+                    R.id.radioSortAscending -> SortDirection.ASCENDING
+                    else -> return@OnClickListener
+                }
+            // StockListViewModel.onSortDirectionSelected() is already a no-op when the direction
+            // hasn't changed, so re-selecting the current direction just dismisses the sheet
+            // without triggering an unnecessary re-sort.
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(selectedDirection))
+            dismiss()
+        }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -56,16 +74,8 @@ class SortBottomSheetFragment : BottomSheetDialogFragment() {
                 SortDirection.ASCENDING -> R.id.radioSortAscending
             },
         )
-        binding.radioGroupSort.setOnCheckedChangeListener { _, checkedId ->
-            val selectedDirection =
-                when (checkedId) {
-                    R.id.radioSortDescending -> SortDirection.DESCENDING
-                    R.id.radioSortAscending -> SortDirection.ASCENDING
-                    else -> return@setOnCheckedChangeListener
-                }
-            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(selectedDirection))
-            dismiss()
-        }
+        binding.radioSortDescending.setOnClickListener(onOptionClicked)
+        binding.radioSortAscending.setOnClickListener(onOptionClicked)
     }
 
     override fun onDestroyView() {
