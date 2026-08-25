@@ -5,7 +5,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
@@ -14,22 +13,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.paging.LoadState
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 import com.sun.taiwan_stock_lab_android.databinding.ActivityMainBinding
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockItemAnimator
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter.StockListAdapter
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.compose.MarketSummaryBar
-import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiState
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.dialog.SortBottomSheetFragment
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.dialog.StockDetailDialogFragment
-import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.computeMarketSummary
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: StockListAdapter
     private val timeFormatter = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
     private var lastRenderedSortDirection: SortDirection? = null
+    private var latestRefreshLoadState: LoadState = LoadState.NotLoading(endOfPaginationReached = false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,9 +96,8 @@ class MainActivity : AppCompatActivity() {
     private fun setupComposeMarketSummary() {
         binding.composeMarketSummary.setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val summary = remember(uiState.stocks) { computeMarketSummary(uiState.stocks) }
             StockLabTheme {
-                MarketSummaryBar(summary = summary)
+                MarketSummaryBar(summary = uiState.marketSummary)
             }
         }
     }
@@ -117,36 +117,57 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.uiEffect.collect { effect -> handleEffect(effect) }
                 }
+                launch {
+                    // Submitting the same PagingData instance twice is a no-op internally, but
+                    // collectLatest still matters here: it cancels any in-flight diff/collection
+                    // against a superseded stream the moment sortDirection produces a new Pager
+                    // (see StockListViewModel.stocksPagingData), instead of letting a stale
+                    // collection finish first.
+                    viewModel.stocksPagingData.collectLatest { pagingData ->
+                        adapter.submitData(pagingData)
+                    }
+                }
+                launch {
+                    adapter.loadStateFlow.collectLatest { loadStates ->
+                        latestRefreshLoadState = loadStates.refresh
+                        renderContentState(viewModel.uiState.value)
+                    }
+                }
             }
         }
     }
 
     private fun renderState(state: StockListUiState) {
         val previousSortDirection = lastRenderedSortDirection
-        val sortDirectionChanged =
-            previousSortDirection != null && previousSortDirection != state.sortDirection
+        val sortDirectionChanged = previousSortDirection != null && previousSortDirection != state.sortDirection
         lastRenderedSortDirection = state.sortDirection
-        adapter.submitList(state.stocks) {
-            if (sortDirectionChanged) {
-                binding.recyclerViewStocks.stopScroll()
-                binding.recyclerViewStocks.scrollToPosition(0)
-            }
+        if (sortDirectionChanged) {
+            // A sort-direction change re-queries Room in a new order (see
+            // StockListViewModel.stocksPagingData) rather than re-sorting an in-memory list, so
+            // there's no "commit callback" moment to hook the scroll reset to. Scrolling
+            // immediately avoids the list appearing to jump once the new page arrives.
+            binding.recyclerViewStocks.stopScroll()
+            binding.recyclerViewStocks.scrollToPosition(0)
         }
-        binding.swipeRefresh.isRefreshing =
-            state.hasLoadedCache &&
-            state.stocks.isNotEmpty() &&
-            state.isRefreshing
-        val isInitialLoading =
-            !state.hasLoadedCache || (state.stocks.isEmpty() && state.isRefreshing)
-        binding.progressInitial.isVisible = isInitialLoading
-        binding.textEmpty.isVisible =
-            state.hasLoadedCache &&
-            state.stocks.isEmpty() &&
-            !state.isRefreshing
+        binding.swipeRefresh.isRefreshing = adapter.itemCount > 0 && state.isRefreshing
         binding.textLastUpdated.text = state.lastUpdatedAt
             ?.let { timeFormatter.format(Date(it)) }
-            ?.let { getString(R.string.last_updated_format, it) }
-            ?: getString(R.string.last_updated_unknown)
+            ?.let { getString(R.string.last_updated_format, it) } ?: getString(R.string.last_updated_unknown)
+        renderContentState(state)
+    }
+
+    // Combines two independent "is loading" signals so the empty-state text can't flash between
+    // them: Paging's own LoadState only reflects the *local Room query* (which finishes almost
+    // instantly even when the cache is empty), while state.isRefreshing reflects the *network*
+    // refresh that's populating that cache. Without combining both, a cold start on an empty
+    // cache would show Room's LoadState.NotLoading + itemCount == 0 — i.e. "empty" — for the
+    // second or two the network fetch is still in flight, before stocks appear.
+    private fun renderContentState(state: StockListUiState) {
+        val hasItems = adapter.itemCount > 0
+        val isInitialLoading = !hasItems && (latestRefreshLoadState is LoadState.Loading || state.isRefreshing)
+        val isEmpty = !hasItems && latestRefreshLoadState is LoadState.NotLoading && !state.isRefreshing
+        binding.progressInitial.isVisible = isInitialLoading
+        binding.textEmpty.isVisible = isEmpty
     }
 
     private fun handleEffect(effect: StockListUiEffect) {
