@@ -174,9 +174,12 @@ class MainActivity : AppCompatActivity() {
     private fun renderContentState(state: StockListUiState) {
         val hasItems = adapter.itemCount > 0
         val loadState = latestRefreshLoadState
-        val isInitialLoading = !hasItems && (loadState is LoadState.Loading || state.isRefreshing)
-        val isEmpty = !hasItems && loadState is LoadState.NotLoading && !state.isRefreshing
         val isError = !hasItems && loadState is LoadState.Error
+        // Excludes isError so a Room-query failure never gets hidden behind (or overlaps with)
+        // the loading spinner just because a network refresh happens to be in flight at the
+        // same time — once the local query has definitively failed, that takes priority.
+        val isInitialLoading = !hasItems && !isError && (loadState is LoadState.Loading || state.isRefreshing)
+        val isEmpty = !hasItems && !isError && loadState is LoadState.NotLoading && !state.isRefreshing
         binding.progressInitial.isVisible = isInitialLoading
         binding.textEmpty.isVisible = isEmpty
         binding.textError.isVisible = isError
