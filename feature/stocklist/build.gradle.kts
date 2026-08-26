@@ -42,6 +42,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Room-backed paging for the stock list. See StockDao for the PagingSource queries and
+    // StockLocalDataSource for how they're wired into a Pager.
+    implementation(libs.androidx.room3.paging)
+    api(libs.androidx.paging.runtime)
     testImplementation(libs.junit5.jupiter.api)
     testImplementation(libs.junit5.jupiter.params)
     testRuntimeOnly(libs.junit5.jupiter.engine)
@@ -49,6 +53,7 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation(libs.androidx.paging.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room3.testing)

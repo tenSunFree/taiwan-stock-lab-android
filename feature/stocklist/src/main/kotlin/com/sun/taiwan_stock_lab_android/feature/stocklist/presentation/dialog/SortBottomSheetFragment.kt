@@ -8,8 +8,8 @@ import androidx.fragment.app.activityViewModels
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.sun.taiwan_stock_lab_android.feature.stocklist.R
 import com.sun.taiwan_stock_lab_android.feature.stocklist.databinding.BottomSheetSortBinding
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.StockListViewModel
-import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 
 /**

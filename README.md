@@ -5,6 +5,7 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2B%20Multi--Module-4CAF50)](#architecture)
 [![Async](https://img.shields.io/badge/Async-Coroutines%20%2B%20Flow-1565C0)](#tech-stack)
 [![Data](https://img.shields.io/badge/Data-Offline--First%20%2B%20Room%203-009688)](#offline-first-architecture)
+[![Paging](https://img.shields.io/badge/Paging-Room%20PagingSource%20%2B%20SQL%20Aggregates-4285F4)](#offline-first-architecture)
 [![DI](https://img.shields.io/badge/DI-Hilt-49A84A)](#dependency-injection)
 [![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
 [![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK-FF9800)](#testing)
@@ -59,7 +60,9 @@ purposes.
 - Room 3 offline-first persistence, with the local database as the single source of truth
 - Local Room access encapsulated behind `StockLocalDataSource`, mirroring `TwseRemoteDataSource` on
   the remote side
-- Reactive local observation through `Flow<List<Stock>>`
+- Reactive local observation split across three purpose-scoped reads — `Flow<PagingData<Stock>>`
+  (list rendering), a single-row lookup, and a `Flow<MarketChangeSummary>` aggregate — see
+  [Offline-First Architecture](#offline-first-architecture)
 - Network refresh writes into Room instead of returning remote data directly to consumers
 - Failed refreshes and empty/invalid remote snapshots preserve the existing cache
 - Coroutine cancellation is propagated instead of being converted into `Result.failure`
@@ -75,14 +78,12 @@ purposes.
   independent of the DI framework
 - Screen-level presentation state managed with a Hilt-injected ViewModel, using `StateFlow` for
   persistent UI state and `SharedFlow` for one-off UI effects (MVI-style Unidirectional Data Flow)
-- XML-based stock list screen with `RecyclerView`, `ListAdapter`/`DiffUtil`, and
+- XML-based stock list screen with `RecyclerView`, `PagingDataAdapter`/`DiffUtil`, and
   `SwipeRefreshLayout`
 - Presentation-layer price coloring: closing price above/below the monthly average, and
   positive/negative daily change, each mapped to red/green following Taiwan stock-market convention
 - Stock-code sorting (ascending/descending) via a Material bottom sheet, default descending, with a
   single-selection `RadioGroup` showing the current direction
-- Sort-direction changes update the ViewModel state atomically and reset the list to the top once
-  the newly sorted data is committed
 - Stock valuation details (P/E ratio, dividend yield, P/B ratio) via a Material alert dialog
 - Initial-loading and empty-state UI handling
 - Compose-based market summary bar (`MarketSummaryBar`) embedded into the XML screen via
@@ -111,6 +112,17 @@ purposes.
   move animations, replacing a blanket `itemAnimator = null`
 - Dark mode verified across XML and Compose UI, with no hardcoded colors bypassing the day/night
   system
+- Room-backed Paging 3 for the stock list: `StockDao` exposes ascending/descending
+  `PagingSource<Int, StockEntity>` queries, wired through a `Pager` and collected by a
+  `PagingDataAdapter`, replacing full in-memory list materialization for RecyclerView rendering
+- Market summary (advancing/declining/unchanged counts) computed as a single SQL aggregate query
+  (`SUM`/`CASE` over the `change` column) rather than classifying a fully-materialized stock list
+  in Kotlin
+- Stock-detail lookup resolves a clicked stock code via a single-row Room query
+  (`SELECT ... WHERE code = :code`) instead of scanning an in-memory list
+- Sort-direction changes are a query-level concern (`ORDER BY code ASC`/`DESC`, re-subscribed via
+  `flatMapLatest`) rather than an in-memory re-sort, so the paged stream never needs the full
+  dataset in memory to reorder it
 
 ---
 
@@ -201,27 +213,118 @@ StockDao
    │
    ▼
 Room 3
-   │
-   │ Flow<List<StockEntity>>
-   ▼
-StockEntityMapper
-   │
-   ▼
-Flow<List<Stock>>
-   │
-   ▼
-presentation layer
 ```
 
-Room is the single source of truth. The repository exposes three operations:
+Room is the single source of truth, but the repository exposes **three separate read paths**
+rather than one, because "the RecyclerView's visible rows" and "counts/lookups over the whole
+dataset" are genuinely different concerns:
 
 ```kotlin
-fun observeStocks(): Flow<List<Stock>>
+// Paged — feeds the RecyclerView. Sort direction is a query-level ORDER BY, not an in-memory sort.
+fun observeStocksPaged(direction: SortDirection): Flow<PagingData<Stock>>
+
+// Single-row — resolves a clicked stock code without scanning a full in-memory list.
+suspend fun getStock(code: String): Stock?
+
+// DB-side aggregate — advancing/declining/unchanged counts via SUM/CASE, not a Kotlin classify-
+// and-count pass over every loaded row.
+fun observeMarketSummary(): Flow<MarketChangeSummary>
 
 fun observeLastRefreshedAt(): Flow<Long?>
 
 suspend fun refreshStocks(): Result<Unit>
 ```
+
+```text
+observeStocksPaged(direction)
+   │
+   ▼
+StockDao.observeAllAscendingPaged() / observeAllDescendingPaged()
+   │
+   │ PagingSource<Int, StockEntity>, via Pager
+   ▼
+StockLocalDataSource: Flow<PagingData<StockEntity>>
+   │
+   ▼
+OfflineFirstStockRepository: Flow<PagingData<Stock>>  (StockEntityMapper.toDomain())
+   │
+   ▼
+StockListViewModel.stocksPagingData: Flow<PagingData<StockUiModel>>
+   (StockUiModelMapper.toUiModel(), .cachedIn(viewModelScope))
+   │
+   ▼
+MainActivity: adapter.submitData(pagingData)
+   │
+   ▼
+StockListAdapter (PagingDataAdapter) → RecyclerView
+```
+
+```text
+observeMarketSummary()
+   │
+   ▼
+StockDao.observeMarketSummary()  ← SUM/CASE over `change`, in SQL
+   │
+   ▼
+StockLocalDataSource: Flow<MarketSummaryRow>
+   │
+   ▼
+OfflineFirstStockRepository: Flow<MarketChangeSummary>
+   │
+   ▼
+StockListViewModel: collected in observeMarketSummary(),
+   mapped via MarketChangeSummary.toUiModel() → MarketSummary
+   │
+   ▼
+StockListUiState.marketSummary  (StateFlow)
+   │
+   ▼
+MainActivity: uiState.marketSummary (collectAsStateWithLifecycle)
+   │
+   ▼
+MarketSummaryBar (Compose)
+```
+
+```text
+StockListAdapter: user taps a card
+   │
+   ▼
+MainActivity: viewModel.onEvent(OnStockClicked(stockCode))
+   │
+   ▼
+StockListViewModel.onStockClicked(stockCode)
+   │
+   ▼
+StockRepository.getStock(code)
+   │
+   ▼
+StockLocalDataSource.getStock(code) → StockDao.getByCode(code)
+   │
+   │ StockEntity?
+   ▼
+Stock?  (StockEntityMapper.toDomain())
+   │
+   ▼
+StockUiModel  (StockUiModelMapper.toUiModel())
+   │
+   ▼
+StockListViewModel: _uiEffect.emit(ShowStockDetail(stock))
+   │
+   ▼
+MainActivity.handleEffect() → StockDetailDialogFragment.newInstance(stock).showNow(...)
+```
+
+An earlier version of this repository exposed a single `Flow<List<Stock>>` for everything —
+list rendering, the market summary, and detail lookups all read the same fully-materialized list.
+Paging 3 replaced that for list rendering specifically, but a paged stream can't answer "how many
+stocks are up today" or "find stock 2330" without walking every loaded page, so those two concerns
+were moved to their own dedicated, smaller queries instead of keeping a second full-list read
+around just for them.
+
+`change` is stored in Room as either SQL `NULL` or a clean plain-decimal string — never a raw TWSE
+sentinel like `"-"` — because `TwseNumericParser` already normalizes it during `StockMapper.merge()`
+before a `Stock` is persisted. `observeMarketSummary()`'s `CAST(change AS REAL)` aggregate relies on
+that guarantee; it would not be safe to write directly against the raw remote strings.
 
 A failed network request or an empty/invalid remote snapshot does not overwrite the existing local
 cache. `observeLastRefreshedAt()` is backed by a single-row `refresh_metadata` table written in the
@@ -283,15 +386,30 @@ ViewModel coroutines call repository suspend functions directly on `viewModelSco
 a specific dispatcher — the underlying Retrofit and Room APIs already expose main-safe suspend
 functions.
 
-`StockListUiState.hasLoadedCache` distinguishes "the local Room query hasn't emitted yet" from "it
-emitted an empty result" — without this, the UI briefly showed the empty-state text before the
-initial cache arrived, since a default/empty state was indistinguishable from a confirmed-empty
-cache.
+`StockListViewModel.stocksPagingData` (`Flow<PagingData<StockUiModel>>`) is exposed as its own
+property rather than a field on `StockListUiState`: `PagingData` isn't meaningfully comparable or
+storable in a plain `data class`, and is designed to be collected by exactly one
+`PagingDataAdapter`. It's built by `flatMapLatest`-ing a private `sortDirection` `MutableStateFlow`
+into `stockRepository.observeStocksPaged(direction)`, so a sort-direction change re-subscribes to a
+freshly-queried `Pager` (`ORDER BY` reversed at the SQL level) instead of re-sorting an in-memory
+list, then `.cachedIn(viewModelScope)` to survive configuration changes.
 
-Selecting a sort direction updates `sortDirection` and the resorted `stocks` list in a single atomic
-`StateFlow` update (`applySort(direction)`), avoiding a transient state where the new direction is
-paired with the previous ordering. Re-selecting the currently active direction is a no-op — no
-re-sort, no state emission.
+The "cache not loaded yet" vs. "loaded but empty" distinction — previously encoded in a
+`StockListUiState.hasLoadedCache` flag — is now covered natively by `PagingDataAdapter`'s
+`loadStateFlow` (`LoadState.Loading` vs. `LoadState.NotLoading` combined with `itemCount == 0`),
+which is why that field no longer exists on `StockListUiState`. `MainActivity` additionally
+combines that `LoadState` with `state.isRefreshing`, since they answer different questions: Paging's
+`LoadState` reflects the *local Room query* (which finishes almost instantly even on an empty
+cache), while `isRefreshing` reflects the *network* refresh that's populating that cache — without
+combining both, a cold start on an empty cache would flash the empty-state text for the second or
+two the network fetch is still in flight. A third `LoadState.Error` branch is handled the same way,
+showing a tappable "load failed, tap to retry" message (`adapter.retry()`) when the local Room
+paging query itself fails with no items loaded — distinct from a network refresh failure, which
+surfaces as a `Snackbar` instead, since the existing cached list can stay visible while that error
+is shown.
+
+Re-selecting the currently active sort direction is a no-op — the `MutableStateFlow` backing
+`stocksPagingData` is never reassigned, so no new `Pager` is created and no state emission happens.
 
 ### UI
 
@@ -304,7 +422,7 @@ MainActivity
  ├── ComposeView (MarketSummaryBar — advancing/declining/unchanged counts)
  ├── "最後更新：..." timestamp label
  ├── SwipeRefreshLayout
- │      └── RecyclerView (StockListAdapter / ListAdapter + DiffUtil)
+ │      └── RecyclerView (StockListAdapter / PagingDataAdapter + DiffUtil)
  ├── SortBottomSheetFragment (single-selection RadioGroup for sort direction)
  └── StockDetailDialogFragment (stock detail)
 ```
@@ -316,8 +434,8 @@ monthly average, change sign) and formatting, not generic app-level view logic. 
 `ChangeDirection` are kept as separate enums rather than a single ambiguous `PriceTrend.UP/DOWN`,
 since "closing price above the monthly average" and "the stock rose today" are different facts.
 
-`StockListAdapter` uses `ViewBinding` and `DiffUtil.ItemCallback` (item identity by stock code,
-content equality by full `StockUiModel`) for efficient list updates.
+`StockListAdapter` is a `PagingDataAdapter` using `ViewBinding` and `DiffUtil.ItemCallback` (item
+identity by stock code, content equality by full `StockUiModel`) for efficient list updates.
 
 `RecyclerView.itemAnimator` uses a custom `StockItemAnimator` rather than the default
 `ItemAnimator` or a blanket `itemAnimator = null`. A full stock-code sort reversal reorders nearly
@@ -326,8 +444,11 @@ operations; animating every one of them was visually indistinguishable from the 
 its own. `StockItemAnimator` overrides only `animateMove` to skip that specific category, while
 ordinary add/remove/change animations (e.g. new stocks appearing on refresh, individual price
 updates) are kept — a narrower trade-off than disabling item animations entirely. On a
-sort-direction change, the list is additionally reset to the top (`scrollToPosition(0)`) once the
-newly sorted data is committed via `submitList`'s callback.
+sort-direction change, `MainActivity` scrolls to the top (`scrollToPosition(0)`) as soon as the new
+direction is detected in `StockListUiState`, rather than waiting on a load-completion callback —
+since the change now re-queries Room in a new order (see [Offline-First
+Architecture](#offline-first-architecture)) instead of re-sorting an already-loaded in-memory list,
+there's no single "commit" moment to hook the scroll reset to.
 
 Both the sort selector and the stock-detail dialog are `FragmentManager`-hosted
 (`BottomSheetDialogFragment` / `DialogFragment`) rather than plain `BottomSheetDialog` /
@@ -367,20 +488,20 @@ MainActivity.setupComposeMarketSummary()
    ▼
 ComposeView.setContent { StockLabTheme { MarketSummaryBar(summary) } }
    │
-   ├── uiState.stocks (collectAsStateWithLifecycle)
-   │
+   ├── uiState.marketSummary (collectAsStateWithLifecycle)
+   │      │
+   │      ▲
+   │   StockDao.observeMarketSummary()  ← SQL aggregate, see Offline-First Architecture
    ▼
-computeMarketSummary(stocks)  ← pure function, feature:stocklist/presentation/mapper
-   │
-   ▼
-MarketSummary(advancingCount, decliningCount, unchangedCount)
+MarketSummaryBar(advancingCount, decliningCount, unchangedCount)
 ```
 
-`computeMarketSummary()` is a plain Kotlin function with no Compose dependency, so its counting
-logic (classifying each stock by `ChangeDirection`) is covered by ordinary JUnit 5 tests rather than
-requiring Compose UI testing infrastructure. `MarketSummaryBar` itself is a stateless composable —
-it receives `MarketSummary` as a parameter instead of observing the ViewModel directly, keeping the
-Compose component decoupled from business logic.
+`MarketSummary` is now computed as a Room SQL aggregate (`SUM`/`CASE` over `change`) rather than a
+Kotlin function classifying a fully-materialized `List<StockUiModel>`, so `MainActivity` just reads
+`uiState.marketSummary` directly — no `remember`/re-derivation step is needed in the Compose call
+site, since the ViewModel already emits the finished count. `MarketSummaryBar` itself remains a
+stateless composable — it receives `MarketSummary` as a parameter instead of observing the
+ViewModel directly, keeping the Compose component decoupled from business logic.
 
 `StockLabTheme` (in `:core:ui`) defines an explicit `ColorScheme` and `Typography` rather than
 relying on Material 3's unconfigured defaults, and `StockLabColors.priceUp`/`priceDown` mirror the
@@ -397,6 +518,8 @@ feature/stocklist/
 ├── data/
 │   ├── local/
 │   │   ├── dao/
+│   │   │   ├── StockDao.kt
+│   │   │   └── MarketSummaryRow.kt
 │   │   ├── entity/
 │   │   ├── StockDatabase.kt
 │   │   ├── StockDatabaseFactory.kt
@@ -408,6 +531,9 @@ feature/stocklist/
 │
 ├── domain/
 │   ├── model/
+│   │   ├── Stock.kt
+│   │   ├── SortDirection.kt
+│   │   └── MarketChangeSummary.kt
 │   └── repository/
 │
 └── presentation/
@@ -418,7 +544,6 @@ feature/stocklist/
     ├── compose/
     │   └── MarketSummaryBar.kt
     ├── contract/
-    │   ├── SortDirection.kt
     │   ├── StockListUiState.kt
     │   ├── StockListUiEvent.kt
     │   └── StockListUiEffect.kt
@@ -467,6 +592,8 @@ feature/stocklist/
 - Room KSP code generation
 - Room Gradle Plugin
 - `BundledSQLiteDriver`
+- `androidx.room3:room3-paging` — registers `PagingSourceDaoReturnTypeConverter` via
+  `@DaoReturnTypeConverters`, so `StockDao` queries can return `PagingSource<Int, StockEntity>`
 - Exported and version-controlled Room schemas
 - Explicit schema migrations (`Migration` + `MigrationTestHelper`)
 
@@ -485,11 +612,13 @@ feature/stocklist/
 - `StateFlow` for persistent UI state
 - `SharedFlow` for one-off UI effects
 - Hilt-injected screen-level ViewModel (`@HiltViewModel`)
+- Paging 3 (`androidx.paging:paging-runtime` 3.4.2) — `Pager`, `PagingData`, `cachedIn`,
+  `PagingDataAdapter`, `LoadState`
 
 **UI**
 
 - XML layouts + ViewBinding
-- `RecyclerView` + `ListAdapter` / `DiffUtil` + custom `StockItemAnimator`
+- `RecyclerView` + `PagingDataAdapter` / `DiffUtil` + custom `StockItemAnimator`
 - `SwipeRefreshLayout`
 - Material Components (`MaterialCardView`, `MaterialToolbar`, `BottomSheetDialogFragment`,
   `RadioGroup`/`MaterialRadioButton`)
@@ -560,6 +689,8 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - MockK
 - kotlinx-coroutines-test
 - Turbine
+- `androidx.paging:paging-testing` (`asSnapshot()`, `PagingData.from(list, sourceLoadStates = ...)`
+  for testing `Flow<PagingData<T>>` built on a non-completable upstream)
 - AndroidJUnit4 / AndroidX Test
 - Room in-memory database tests
 - Room `MigrationTestHelper`
@@ -598,9 +729,11 @@ required code or name.
 **Structured Concurrency** — `TwseRemoteDataSourceTest` verifies that three mocked endpoint calls,
 each delayed by one virtual second, complete in approximately one virtual second rather than three.
 
-**Offline-First Repository** — `OfflineFirstStockRepositoryTest` covers reading cached stocks via
-`StockLocalDataSource`, reading/writing the last-refreshed timestamp, successful remote refresh,
-preserving cache after network failure/empty snapshot, and propagating `CancellationException`.
+**Offline-First Repository** — `OfflineFirstStockRepositoryTest` covers mapping paged stock entities
+to domain stocks (`observeStocksPaged`, via `androidx.paging.testing.asSnapshot()`), single-row
+stock lookup (`getStock`, found/not-found), mapping the market-summary aggregate row to a domain
+`MarketChangeSummary`, reading the last-refreshed timestamp, successful remote refresh, preserving
+cache after network failure/empty snapshot, and propagating `CancellationException`.
 
 **Room DAO** — `StockDaoTest` is an Android instrumentation test using a real in-memory Room
 database with `BundledSQLiteDriver`, covering atomic stock+metadata replacement.
@@ -611,19 +744,25 @@ database with `BundledSQLiteDriver`, covering atomic stock+metadata replacement.
 **Dependency Injection** — `StockRepositoryInjectionTest` is an Android instrumentation test
 verifying the production Hilt dependency graph resolves and injects `StockRepository`.
 
-**Presentation State** — `StockListViewModelTest` covers cached-stock observation, `hasLoadedCache`
-becoming true even for an empty cache, `OnStart` triggering the initial refresh exactly once,
-explicit `OnRefresh`, atomic sort-direction + stock-order updates, no-op behavior when re-selecting
-the current sort direction, refresh failure state/effect, last-refreshed timestamp exposure, and
-stock-detail effects for known/unknown stock codes — using JUnit 5, MockK,
-`kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine.
+**Presentation State** — `StockListViewModelTest` covers `stocksPagingData` reflecting the paged
+stream for the default and a re-selected sort direction (via `asSnapshot()`), `OnStart` triggering
+the initial refresh exactly once, no-op behavior when re-selecting the current sort direction,
+refresh failure state/effect, market-summary exposure through `StockListUiState`, last-refreshed
+timestamp exposure, and stock-detail effects for known/unknown stock codes — using JUnit 5, MockK,
+`kotlinx-coroutines-test` (`StandardTestDispatcher`), and Turbine. `PagingData.from(list,
+sourceLoadStates = ...)` is used with explicit `LoadStates` rather than the no-argument overload,
+since `stocksPagingData` is built on a non-completable `MutableStateFlow` upstream — without
+explicit `LoadStates`, `asSnapshot()` has no signal that a page finished loading and hangs.
 
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below
 monthly average), change-direction classification (positive/negative), null-value placeholders,
 thousands-separator formatting, and the `+`/`-` sign on the change value.
 
-**Market Summary Calculation** — `MarketSummaryMapperTest` covers counting stocks by change
-direction and returning an all-zero summary for an empty list, independent of any Compose runtime.
+**Market Summary Mapping** — `MarketSummaryMapperTest` verifies the trivial field mapping from the
+domain `MarketChangeSummary` to the presentation `MarketSummary`. The advancing/declining/unchanged
+*counting* logic itself moved into a Room SQL aggregate (`StockDao.observeMarketSummary`); dedicated
+`StockDaoTest` coverage for that aggregate — including how a `NULL` `change` column is bucketed — is
+not yet written (see [Roadmap](#roadmap)).
 
 Notable test names:
 
@@ -639,10 +778,10 @@ closingAboveMonthlyAverage_isMarkedAboveAverage
 positiveChange_includesPlusSign
 replaceAll_writesRefreshMetadataAlongsideStocks
 migrate1To2_preservesExistingStocksAndAddsMetadataTable
-selectingAscendingSort_updatesDirectionAndStocksAtomically
 selectingCurrentSortDirection_isANoOp
-computeMarketSummary_countsStocksByChangeDirection
-computeMarketSummary_returnsAllZeroForEmptyList
+stocksPagingData_reflectsRepositoryStocksForTheDefaultSortDirection
+observeStocksPaged_mapsEntitiesToDomainStocks
+observeMarketSummary_mapsTheAggregateRowToADomainSummary
 ```
 
 ---
@@ -713,7 +852,8 @@ push and pull request against `main`.
 | Quality tooling          | ktlint, detekt — CI integration                                                                       | ✅ Done    |
 | Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                                | ✅ Done    |
 | Polish                   | Dark mode verification, rotation-safe dialogs (`FragmentManager`), narrower item animations           | ✅ Done    |
-| Scaling                  | Paging 3 for the stock list, if dataset size grows significantly                                      | ⏳ Future  |
+| Scaling                  | Paging 3 foundation for the stock list (Room `PagingSource`, `Pager`, `PagingDataAdapter`, DB-side market-summary aggregate) | ✅ Done    |
+| Testing                  | `StockDaoTest` coverage for the paged queries and the market-summary SQL aggregate (including `NULL` `change` bucketing)     | ⏳ Next    |
 
 ---
 
@@ -937,6 +1077,8 @@ This project demonstrates Android engineering practices such as:
 - MVI-style unidirectional presentation state
 - presentation-layer business-rule mapping (price coloring, formatting)
 - reactive data flow
+- Paging 3 with a Room `PagingSource`, keeping list rendering, aggregate counts, and single-row
+  lookups on separate, appropriately-scoped queries instead of one full-list read for everything
 - database schema evolution with migration testing
 - XML/Jetpack Compose interoperability
 - repository-wide code-style enforcement

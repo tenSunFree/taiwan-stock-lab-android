@@ -1,10 +1,16 @@
 package com.sun.taiwan_stock_lab_android.feature.stocklist.data.repository
 
+import androidx.paging.LoadState
+import androidx.paging.LoadStates
+import androidx.paging.PagingData
+import androidx.paging.testing.asSnapshot
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.StockLocalDataSource
+import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.dao.MarketSummaryRow
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.entity.StockEntity
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.TwseRemoteDataSource
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.dto.StockDayDto
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.model.TwseRawSnapshot
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.SortDirection
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -14,24 +20,68 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.IOException
 
 class OfflineFirstStockRepositoryTest {
+    // See StockListViewModelTest for why asSnapshot() needs an explicit LoadStates signal.
+    private val fullyLoadedStates =
+        LoadStates(
+            refresh = LoadState.NotLoading(endOfPaginationReached = true),
+            prepend = LoadState.NotLoading(endOfPaginationReached = true),
+            append = LoadState.NotLoading(endOfPaginationReached = true),
+        )
+
     @Test
-    fun `observeStocks reads from local data source`() =
+    fun `observeStocksPaged maps entities to domain stocks`() =
         runTest {
             val localDataSource = mockk<StockLocalDataSource>()
-            every { localDataSource.observeStocks() } returns
+            every { localDataSource.observeStocksPaged(SortDirection.DESCENDING) } returns
                 flowOf(
-                    listOf(sampleEntity("2330", "台積電")),
+                    PagingData.from(
+                        listOf(sampleEntity("2330", "台積電")),
+                        sourceLoadStates = fullyLoadedStates,
+                    ),
                 )
             val repository = OfflineFirstStockRepository(mockk(), localDataSource)
-            val stocks = repository.observeStocks().first()
-            assertEquals(1, stocks.size)
-            assertEquals("2330", stocks.first().code)
+            val snapshot = repository.observeStocksPaged(SortDirection.DESCENDING).asSnapshot()
+            assertEquals(1, snapshot.size)
+            assertEquals("2330", snapshot.first().code)
+        }
+
+    @Test
+    fun `getStock returns the mapped stock when the local data source finds it`() =
+        runTest {
+            val localDataSource = mockk<StockLocalDataSource>()
+            coEvery { localDataSource.getStock("2330") } returns sampleEntity("2330", "台積電")
+            val repository = OfflineFirstStockRepository(mockk(), localDataSource)
+            val stock = repository.getStock("2330")
+            assertEquals("2330", stock?.code)
+        }
+
+    @Test
+    fun `getStock returns null when the local data source has no match`() =
+        runTest {
+            val localDataSource = mockk<StockLocalDataSource>()
+            coEvery { localDataSource.getStock("9999") } returns null
+            val repository = OfflineFirstStockRepository(mockk(), localDataSource)
+            assertNull(repository.getStock("9999"))
+        }
+
+    @Test
+    fun `observeMarketSummary maps the aggregate row to a domain summary`() =
+        runTest {
+            val localDataSource = mockk<StockLocalDataSource>()
+            every { localDataSource.observeMarketSummary() } returns
+                flowOf(MarketSummaryRow(advancingCount = 3, decliningCount = 1, unchangedCount = 2))
+            val repository = OfflineFirstStockRepository(mockk(), localDataSource)
+            val summary = repository.observeMarketSummary().first()
+            assertEquals(3, summary.advancingCount)
+            assertEquals(1, summary.decliningCount)
+            assertEquals(2, summary.unchangedCount)
         }
 
     @Test

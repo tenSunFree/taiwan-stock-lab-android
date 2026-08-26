@@ -1,10 +1,14 @@
 package com.sun.taiwan_stock_lab_android.feature.stocklist.data.repository
 
+import androidx.paging.PagingData
+import androidx.paging.map
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.local.StockLocalDataSource
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.mapper.StockMapper
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.mapper.toDomain
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.mapper.toEntity
 import com.sun.taiwan_stock_lab_android.feature.stocklist.data.remote.TwseRemoteDataSource
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.MarketChangeSummary
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.Stock
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.repository.StockRepository
 import kotlinx.coroutines.CancellationException
@@ -21,8 +25,21 @@ class OfflineFirstStockRepository(
     private val localDataSource: StockLocalDataSource,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : StockRepository {
-    override fun observeStocks(): Flow<List<Stock>> =
-        localDataSource.observeStocks().map { entities -> entities.map { it.toDomain() } }
+    override fun observeStocksPaged(direction: SortDirection): Flow<PagingData<Stock>> =
+        localDataSource.observeStocksPaged(direction).map { pagingData ->
+            pagingData.map { entity -> entity.toDomain() }
+        }
+
+    override suspend fun getStock(code: String): Stock? = localDataSource.getStock(code)?.toDomain()
+
+    override fun observeMarketSummary(): Flow<MarketChangeSummary> =
+        localDataSource.observeMarketSummary().map { row ->
+            MarketChangeSummary(
+                advancingCount = row.advancingCount,
+                decliningCount = row.decliningCount,
+                unchangedCount = row.unchangedCount,
+            )
+        }
 
     override fun observeLastRefreshedAt(): Flow<Long?> = localDataSource.observeLastRefreshedAt()
 

@@ -3,8 +3,8 @@ package com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.adapter
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
+import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.sun.taiwan_stock_lab_android.feature.stocklist.databinding.ItemStockCardBinding
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.ChangeDirection
@@ -14,7 +14,7 @@ import com.sun.taiwan_stock_lab_android.core.ui.R as CoreUiR
 
 class StockListAdapter(
     private val onStockClicked: (String) -> Unit,
-) : ListAdapter<StockUiModel, StockListAdapter.StockViewHolder>(DiffCallback) {
+) : PagingDataAdapter<StockUiModel, StockListAdapter.StockViewHolder>(DiffCallback) {
     override fun onCreateViewHolder(
         parent: ViewGroup,
         viewType: Int,
@@ -28,7 +28,11 @@ class StockListAdapter(
         holder: StockViewHolder,
         position: Int,
     ) {
-        holder.bind(getItem(position))
+        // Placeholders are disabled (StockLocalDataSource.PAGE_SIZE config), so within a valid
+        // position this should always be non-null in practice; the null case is only reachable
+        // during the brief window right after a page is invalidated.
+        val stock = getItem(position) ?: return
+        holder.bind(stock)
     }
 
     class StockViewHolder(

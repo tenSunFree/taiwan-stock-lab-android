@@ -1,9 +1,14 @@
 package com.sun.taiwan_stock_lab_android.feature.stocklist.presentation
 
+import androidx.paging.LoadState
+import androidx.paging.LoadStates
+import androidx.paging.PagingData
+import androidx.paging.testing.asSnapshot
 import app.cash.turbine.test
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.MarketChangeSummary
+import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.model.Stock
 import com.sun.taiwan_stock_lab_android.feature.stocklist.domain.repository.StockRepository
-import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.SortDirection
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEffect
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.contract.StockListUiEvent
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.mapper.toUiModel
@@ -44,7 +49,20 @@ class StockListViewModelTest {
             pbRatio = null,
         )
     private val sampleStock0050 = sampleStock2330.copy(code = "0050", name = "元大台灣50")
+    private val emptySummary = MarketChangeSummary(advancingCount = 0, decliningCount = 0, unchangedCount = 0)
     private val testDispatcher = StandardTestDispatcher()
+
+    // asSnapshot() needs an explicit LoadStates signal to know a page finished loading;
+    // PagingData.from(list) alone doesn't carry that, and stocksPagingData is built on top of a
+    // MutableStateFlow (sortDirection) that never completes on its own, so without this,
+    // asSnapshot() hangs waiting for a completion signal that never arrives — surfacing as
+    // kotlinx.coroutines.test.UncompletedCoroutinesError when runTest tries to finish.
+    private val fullyLoadedStates =
+        LoadStates(
+            refresh = LoadState.NotLoading(endOfPaginationReached = true),
+            prepend = LoadState.NotLoading(endOfPaginationReached = true),
+            append = LoadState.NotLoading(endOfPaginationReached = true),
+        )
 
     @BeforeEach
     fun setUp() {
@@ -57,41 +75,56 @@ class StockListViewModelTest {
     }
 
     @Test
-    fun `cached stocks are exposed through ui state`() =
+    fun `stocksPagingData reflects repository stocks for the default sort direction`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock2330))
+            // Sorting is now a query-level concern (see StockDao); the mock stands in for
+            // "the DB already returned rows in descending order" rather than the ViewModel
+            // sorting anything itself.
+            val repository =
+                createRepository(
+                    descendingStocks = listOf(sampleStock2330, sampleStock0050),
+                )
             val viewModel = StockListViewModel(repository)
-            advanceUntilIdle()
-            assertEquals(listOf(sampleStock2330.toUiModel()), viewModel.uiState.value.stocks)
+            val snapshot = viewModel.stocksPagingData.asSnapshot()
+            assertEquals(listOf(sampleStock2330.toUiModel(), sampleStock0050.toUiModel()), snapshot)
         }
 
     @Test
-    fun `default sort direction is descending by code`() =
+    fun `default sort direction is descending`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
+            val repository = createRepository()
             val viewModel = StockListViewModel(repository)
             advanceUntilIdle()
             assertEquals(SortDirection.DESCENDING, viewModel.uiState.value.sortDirection)
-            assertEquals(
-                listOf("2330", "0050"),
-                viewModel.uiState.value.stocks
-                    .map { it.code },
-            )
         }
 
     @Test
-    fun `selecting ascending sort reorders stocks by code`() =
+    fun `selecting ascending sort requests the ascending paged stream`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
+            val repository =
+                createRepository(
+                    descendingStocks = listOf(sampleStock2330, sampleStock0050),
+                    ascendingStocks = listOf(sampleStock0050, sampleStock2330),
+                )
             val viewModel = StockListViewModel(repository)
             advanceUntilIdle()
             viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
             advanceUntilIdle()
-            assertEquals(
-                listOf("0050", "2330"),
-                viewModel.uiState.value.stocks
-                    .map { it.code },
-            )
+            assertEquals(SortDirection.ASCENDING, viewModel.uiState.value.sortDirection)
+            val snapshot = viewModel.stocksPagingData.asSnapshot()
+            assertEquals(listOf(sampleStock0050.toUiModel(), sampleStock2330.toUiModel()), snapshot)
+        }
+
+    @Test
+    fun `selecting current sort direction is a no-op`() =
+        runTest(testDispatcher) {
+            val repository = createRepository()
+            val viewModel = StockListViewModel(repository)
+            advanceUntilIdle()
+            viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
+            advanceUntilIdle()
+            // Only the initial subscription should have requested the descending stream.
+            coVerify(exactly = 0) { repository.observeStocksPaged(SortDirection.ASCENDING) }
         }
 
     @Test
@@ -121,7 +154,8 @@ class StockListViewModelTest {
         runTest(testDispatcher) {
             val repository =
                 mockk<StockRepository> {
-                    every { observeStocks() } returns flowOf(emptyList())
+                    every { observeStocksPaged(any()) } returns flowOf(PagingData.empty())
+                    every { observeMarketSummary() } returns flowOf(emptySummary)
                     every { observeLastRefreshedAt() } returns flowOf(null)
                     coEvery { refreshStocks() } returns Result.failure(RuntimeException("Network failure"))
                 }
@@ -139,7 +173,8 @@ class StockListViewModelTest {
     @Test
     fun `known stock click emits ShowStockDetail`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock2330))
+            val repository = createRepository()
+            coEvery { repository.getStock("2330") } returns sampleStock2330
             val viewModel = StockListViewModel(repository)
             advanceUntilIdle()
             viewModel.uiEffect.test {
@@ -155,7 +190,8 @@ class StockListViewModelTest {
     @Test
     fun `unknown stock click emits nothing`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock2330))
+            val repository = createRepository()
+            coEvery { repository.getStock("9999") } returns null
             val viewModel = StockListViewModel(repository)
             advanceUntilIdle()
             viewModel.uiEffect.test {
@@ -165,24 +201,17 @@ class StockListViewModelTest {
             }
         }
 
-    private fun createRepository(
-        stocks: List<Stock> = emptyList(),
-        lastRefreshedAt: Long? = null,
-    ): StockRepository =
-        mockk {
-            every { observeStocks() } returns flowOf(stocks)
-            every { observeLastRefreshedAt() } returns flowOf(lastRefreshedAt)
-            coEvery { refreshStocks() } returns Result.success(Unit)
-        }
-
     @Test
-    fun `hasLoadedCache becomes true after local source emits even when cache is empty`() =
+    fun `market summary is exposed through ui state`() =
         runTest(testDispatcher) {
-            val repository = createRepository(stocks = emptyList())
+            val summary = MarketChangeSummary(advancingCount = 4, decliningCount = 2, unchangedCount = 1)
+            val repository = createRepository(marketSummary = summary)
             val viewModel = StockListViewModel(repository)
             advanceUntilIdle()
-            assertEquals(true, viewModel.uiState.value.hasLoadedCache)
-            assertEquals(emptyList<Any>(), viewModel.uiState.value.stocks)
+            val uiSummary = viewModel.uiState.value.marketSummary
+            assertEquals(4, uiSummary.advancingCount)
+            assertEquals(2, uiSummary.decliningCount)
+            assertEquals(1, uiSummary.unchangedCount)
         }
 
     @Test
@@ -195,35 +224,20 @@ class StockListViewModelTest {
             assertEquals(timestamp, viewModel.uiState.value.lastUpdatedAt)
         }
 
-    @Test
-    fun `selecting ascending sort updates direction and stocks atomically`() =
-        runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock2330, sampleStock0050))
-            val viewModel = StockListViewModel(repository)
-            advanceUntilIdle()
-            viewModel.uiState.test {
-                val initialState = awaitItem()
-                assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
-                assertEquals(listOf("2330", "0050"), initialState.stocks.map { it.code })
-                viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.ASCENDING))
-                val sortedState = awaitItem()
-                assertEquals(SortDirection.ASCENDING, sortedState.sortDirection)
-                assertEquals(listOf("0050", "2330"), sortedState.stocks.map { it.code })
-                expectNoEvents()
-            }
-        }
-
-    @Test
-    fun `selecting current sort direction is a no-op`() =
-        runTest(testDispatcher) {
-            val repository = createRepository(stocks = listOf(sampleStock0050, sampleStock2330))
-            val viewModel = StockListViewModel(repository)
-            advanceUntilIdle()
-            viewModel.uiState.test {
-                val initialState = awaitItem()
-                assertEquals(SortDirection.DESCENDING, initialState.sortDirection)
-                viewModel.onEvent(StockListUiEvent.OnSortDirectionSelected(SortDirection.DESCENDING))
-                expectNoEvents()
-            }
+    private fun createRepository(
+        descendingStocks: List<Stock> = emptyList(),
+        ascendingStocks: List<Stock> = emptyList(),
+        marketSummary: MarketChangeSummary = emptySummary,
+        lastRefreshedAt: Long? = null,
+    ): StockRepository =
+        mockk {
+            every { observeStocksPaged(SortDirection.DESCENDING) } returns
+                flowOf(PagingData.from(descendingStocks, sourceLoadStates = fullyLoadedStates))
+            every { observeStocksPaged(SortDirection.ASCENDING) } returns
+                flowOf(PagingData.from(ascendingStocks, sourceLoadStates = fullyLoadedStates))
+            every { observeMarketSummary() } returns flowOf(marketSummary)
+            every { observeLastRefreshedAt() } returns flowOf(lastRefreshedAt)
+            coEvery { refreshStocks() } returns Result.success(Unit)
+            coEvery { getStock(any()) } returns null
         }
 }
