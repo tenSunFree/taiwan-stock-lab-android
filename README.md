@@ -60,8 +60,9 @@ purposes.
 - Room 3 offline-first persistence, with the local database as the single source of truth
 - Local Room access encapsulated behind `StockLocalDataSource`, mirroring `TwseRemoteDataSource` on
   the remote side
-- Reactive local observation through `Flow<List<Stock>>` (full-list) and `Flow<PagingData<Stock>>`
-  (paged), used for different concerns — see [Offline-First Architecture](#offline-first-architecture)
+- Reactive local observation split across three purpose-scoped reads — `Flow<PagingData<Stock>>`
+  (list rendering), a single-row lookup, and a `Flow<MarketChangeSummary>` aggregate — see
+  [Offline-First Architecture](#offline-first-architecture)
 - Network refresh writes into Room instead of returning remote data directly to consumers
 - Failed refreshes and empty/invalid remote snapshots preserve the existing cache
 - Coroutine cancellation is propagated instead of being converted into `Result.failure`
@@ -77,14 +78,12 @@ purposes.
   independent of the DI framework
 - Screen-level presentation state managed with a Hilt-injected ViewModel, using `StateFlow` for
   persistent UI state and `SharedFlow` for one-off UI effects (MVI-style Unidirectional Data Flow)
-- XML-based stock list screen with `RecyclerView`, `ListAdapter`/`DiffUtil`, and
+- XML-based stock list screen with `RecyclerView`, `PagingDataAdapter`/`DiffUtil`, and
   `SwipeRefreshLayout`
 - Presentation-layer price coloring: closing price above/below the monthly average, and
   positive/negative daily change, each mapped to red/green following Taiwan stock-market convention
 - Stock-code sorting (ascending/descending) via a Material bottom sheet, default descending, with a
   single-selection `RadioGroup` showing the current direction
-- Sort-direction changes update the ViewModel state atomically and reset the list to the top once
-  the newly sorted data is committed
 - Stock valuation details (P/E ratio, dividend yield, P/B ratio) via a Material alert dialog
 - Initial-loading and empty-state UI handling
 - Compose-based market summary bar (`MarketSummaryBar`) embedded into the XML screen via
@@ -403,7 +402,11 @@ combines that `LoadState` with `state.isRefreshing`, since they answer different
 `LoadState` reflects the *local Room query* (which finishes almost instantly even on an empty
 cache), while `isRefreshing` reflects the *network* refresh that's populating that cache — without
 combining both, a cold start on an empty cache would flash the empty-state text for the second or
-two the network fetch is still in flight.
+two the network fetch is still in flight. A third `LoadState.Error` branch is handled the same way,
+showing a tappable "load failed, tap to retry" message (`adapter.retry()`) when the local Room
+paging query itself fails with no items loaded — distinct from a network refresh failure, which
+surfaces as a `Snackbar` instead, since the existing cached list can stay visible while that error
+is shown.
 
 Re-selecting the currently active sort direction is a no-op — the `MutableStateFlow` backing
 `stocksPagingData` is never reassigned, so no new `Pager` is created and no state emission happens.

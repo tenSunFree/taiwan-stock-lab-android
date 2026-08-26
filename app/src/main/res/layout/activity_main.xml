@@ -38,7 +38,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/composeMarketSummary"
-        tools:text="最後更新：08/17 14:32" />
+        tools:text="@string/last_updated_format" />
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"
@@ -76,4 +76,27 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@id/swipeRefresh" />
+
+    <!--
+        Shown when the local Room paging query itself fails (LoadState.Error) and no items are
+        loaded yet — distinct from a network refresh failure, which surfaces as a Snackbar via
+        StockListUiEffect.ShowError instead, since the cached list can still be displayed while
+        that error is shown. Tapping retries the failed page load via PagingDataAdapter.retry().
+    -->
+    <TextView
+        android:id="@+id/textError"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="?attr/colorError"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/swipeRefresh"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/swipeRefresh"
+        tools:text="@string/tap_to_retry_format"
+        tools:visibility="visible" />
 </androidx.constraintlayout.widget.ConstraintLayout>

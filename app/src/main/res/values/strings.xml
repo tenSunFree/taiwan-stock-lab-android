@@ -11,4 +11,6 @@
     <string name="empty_stock_list">尚無股票資料</string>
     <string name="last_updated_format">最後更新：%1$s</string>
     <string name="last_updated_unknown">尚未更新過</string>
+    <string name="generic_load_error">載入失敗</string>
+    <string name="tap_to_retry_format">%1$s，點擊重試</string>
 </resources>
