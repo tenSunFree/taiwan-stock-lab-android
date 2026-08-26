@@ -123,6 +123,15 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
 
+      - name: Compile Android instrumentation tests
+        # Compile-only check — no emulator required. androidTest source sets (e.g. StockDaoTest)
+        # aren't touched by `test` (JVM-only), `lint`, or `assembleDebug` above, so a production
+        # API change can silently break them without any of those tasks noticing. This step only
+        # catches compile-time breakage; actually running the tests still requires
+        # `./gradlew :feature:stocklist:connectedDebugAndroidTest` against a device/emulator,
+        # which is intentionally not run in this workflow (see README → Continuous Integration).
+        run: ./gradlew :feature:stocklist:assembleDebugAndroidTest :app:assembleDebugAndroidTest
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
