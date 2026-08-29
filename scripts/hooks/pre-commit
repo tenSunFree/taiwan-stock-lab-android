@@ -1,23 +1,115 @@
-#!/bin/sh
-# Fast commit-time guard.
+#!/usr/bin/env bash
+# Fast commit-time guard: secret scan (all staged files) + ktlintCheck (staged Kotlin files only).
 #
-# This hook intentionally does NOT run ktlintFormat and does NOT modify the working tree:
-# - formatting inside a Git hook can touch unrelated unstaged changes in the same file
-# - re-adding a partially staged file risks staging hunks the developer never intended to commit
-# - some ktlint violations (e.g. max-line-length) aren't auto-correctable anyway, so a
-#   format-then-hope approach wouldn't have caught them
+# Neither step modifies the working tree or auto-stages anything:
+# - a "secret scanner" that silently rewrites your commit is worse than useless
+# - ktlintCheck (not ktlintFormat) for the same reasons documented below the Kotlin section:
+#   formatting inside a hook can touch unrelated unstaged changes, and some violations (e.g.
+#   max-line-length) aren't auto-correctable anyway
 #
-# When ktlintCheck fails here, run `./gradlew ktlintFormat` explicitly, fix anything it can't
-# auto-correct by hand, then `git add` and commit again.
-set -e
+# Install: ./gradlew installGitHooks
+# Bypass (not recommended): git commit --no-verify
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+echo ""
+echo "[pre-commit] Running checks..."
+
+# ============================================================
+# 1. Secret scan (staged changes only)
+# ============================================================
+echo ""
+echo "==> Secret scan (staged changes)"
+
+if command -v gitleaks >/dev/null 2>&1; then
+    echo "gitleaks detected — scanning staged content..."
+    if gitleaks protect --staged --verbose; then
+        echo "Passed: gitleaks scan"
+    else
+        echo ""
+        echo "gitleaks detected potentially confidential content. Commit aborted."
+        echo "If this is a false positive, add an allowlist entry to .gitleaks.toml."
+        echo "To skip (not recommended): git commit --no-verify"
+        exit 1
+    fi
+else
+    echo "gitleaks not installed — using the built-in fallback scanner."
+    echo "For a more complete scan (entropy analysis, full rule base), install gitleaks:"
+    echo "https://github.com/gitleaks/gitleaks#installing"
+    echo ""
+
+    # Common credential/key formats, plus generic key=value secrets.
+    SECRET_PATTERN="AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[0-9A-Za-z]{20,}|-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----|(password|passwd|secret|token|api[_-]?key)[[:space:]]*[:=][[:space:]]*[\"'][^\"']{6,}[\"']"
+
+    staged_files=()
+    while IFS= read -r -d '' file; do
+        staged_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACM -z)
+
+    found_secret=0
+    for f in "${staged_files[@]}"; do
+        [ -f "$f" ] || continue
+
+        # Skip binary files.
+        if ! git diff --cached -- "$f" | grep -Iq .; then
+            continue
+        fi
+
+        # Only scan added lines (+), so removing a secret never blocks the commit.
+        matches=$(git diff --cached -U0 -- "$f" \
+            | grep -E '^\+' | grep -vE '^\+\+\+' \
+            | grep -EiA0 -- "$SECRET_PATTERN")
+
+        if [ -n "$matches" ]; then
+            echo ""
+            echo "Possible secret in: $f"
+            echo "$matches" | sed 's/^/    /'
+            found_secret=1
+        fi
+
+        # Files that should never be tracked in this repo (see .gitignore) — this also catches
+        # a `git add -f` bypassing the ignore rule, not just a missing ignore entry.
+        case "$f" in
+            google-services.json|*.jks|*.keystore|local.properties|*.pem|*.p12|*id_rsa*|*id_ed25519*)
+                echo ""
+                echo "Committing a file that should never be tracked in this repo: $f"
+                found_secret=1
+                ;;
+        esac
+    done
+
+    if [ "$found_secret" -ne 0 ]; then
+        echo ""
+        echo "The fallback scanner found potentially confidential content. Commit aborted."
+        echo "If this is a false positive, use 'git commit --no-verify' to skip it (not recommended)."
+        exit 1
+    fi
+
+    echo "Passed: fallback secret scan"
+fi
+
+# ============================================================
+# 2. ktlintCheck (staged Kotlin files only)
+# ============================================================
+echo ""
+echo "==> ktlintCheck"
 
 staged_kotlin_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.kt' '*.kts')
 
 if [ -z "$staged_kotlin_files" ]; then
-    exit 0
+    echo "No staged Kotlin/Kotlin-DSL files — skipping."
+else
+    echo "Kotlin changes detected — running ktlintCheck..."
+    if ./gradlew ktlintCheck --quiet; then
+        echo "Passed: ktlintCheck"
+    else
+        echo ""
+        echo "ktlintCheck found violations. Commit aborted."
+        echo "Run './gradlew ktlintFormat' to auto-fix what it can, then fix the rest by hand."
+        exit 1
+    fi
 fi
 
-echo "[pre-commit] Kotlin changes detected — running ktlintCheck..."
-./gradlew ktlintCheck --quiet
-
-echo "[pre-commit] ktlintCheck passed."
+echo ""
+echo "[pre-commit] All checks passed."
+exit 0
