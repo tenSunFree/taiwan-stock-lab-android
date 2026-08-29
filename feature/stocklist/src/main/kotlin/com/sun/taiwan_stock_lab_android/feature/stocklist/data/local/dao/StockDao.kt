@@ -37,9 +37,12 @@ interface StockDao {
     // aggregate result onto a non-nullable Int field.
     @Query(
         "SELECT " +
-            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) > 0 THEN 1 ELSE 0 END), 0) AS advancingCount, " +
-            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) < 0 THEN 1 ELSE 0 END), 0) AS decliningCount, " +
-            "COALESCE(SUM(CASE WHEN change IS NULL OR CAST(change AS REAL) = 0 THEN 1 ELSE 0 END), 0) AS unchangedCount " +
+            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) > 0 " +
+            "THEN 1 ELSE 0 END), 0) AS advancingCount, " +
+            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) < 0 " +
+            "THEN 1 ELSE 0 END), 0) AS decliningCount, " +
+            "COALESCE(SUM(CASE WHEN change IS NULL OR CAST(change AS REAL) = 0 " +
+            "THEN 1 ELSE 0 END), 0) AS unchangedCount " +
             "FROM stocks",
     )
     fun observeMarketSummary(): Flow<MarketSummaryRow>

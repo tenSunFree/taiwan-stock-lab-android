@@ -1,0 +1,23 @@
+#!/bin/sh
+# Fast commit-time guard.
+#
+# This hook intentionally does NOT run ktlintFormat and does NOT modify the working tree:
+# - formatting inside a Git hook can touch unrelated unstaged changes in the same file
+# - re-adding a partially staged file risks staging hunks the developer never intended to commit
+# - some ktlint violations (e.g. max-line-length) aren't auto-correctable anyway, so a
+#   format-then-hope approach wouldn't have caught them
+#
+# When ktlintCheck fails here, run `./gradlew ktlintFormat` explicitly, fix anything it can't
+# auto-correct by hand, then `git add` and commit again.
+set -e
+
+staged_kotlin_files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.kt' '*.kts')
+
+if [ -z "$staged_kotlin_files" ]; then
+    exit 0
+fi
+
+echo "[pre-commit] Kotlin changes detected — running ktlintCheck..."
+./gradlew ktlintCheck --quiet
+
+echo "[pre-commit] ktlintCheck passed."

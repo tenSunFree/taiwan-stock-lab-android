@@ -862,6 +862,39 @@ git clone https://github.com/kw012345678/taiwan-stock-lab-android.git
 cd taiwan-stock-lab-android
 ```
 
+### Local Git Hooks
+
+This repository tracks Git hooks under `scripts/hooks/`. Configure Git to use them once per clone:
+
+```bash
+./gradlew installGitHooks
+```
+
+This sets `core.hooksPath` to `scripts/hooks` (verify with `git config --get core.hooksPath`),
+rather than copying files into `.git/hooks/` — `.git/hooks/` isn't version-controlled and would
+drift out of sync with the tracked source whenever a hook is edited.
+
+| Hook | Runs on | What it checks |
+|---|---|---|
+| `pre-commit` | every `git commit` | Secret scan on staged changes (`gitleaks`, or a built-in regex/filename fallback if `gitleaks` isn't installed); `ktlintCheck` on staged Kotlin/Kotlin-DSL files only |
+| `commit-msg` | every `git commit` | Commit message follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `test:`, `chore:`, etc.) |
+| `pre-push` | every `git push` | `ktlintCheck`, `detekt`, `test`, `lint`, `assembleDebug`, and `assembleDebugAndroidTest` — the same non-emulator checks CI runs, so a push that would fail CI fails locally first |
+
+Neither hook modifies the working tree or auto-stages anything — if `pre-commit` fails, fix the
+issue explicitly (e.g. `./gradlew ktlintFormat`) and re-`git add` before committing again.
+`connectedDebugAndroidTest` (requires an emulator or device) is intentionally not part of any
+hook and stays a manual step.
+
+For a full working-directory-and-history secret scan (recommended before opening a PR or cutting
+a release, not on every commit — it's slower than the staged-only `pre-commit` scan):
+
+```bash
+bash scripts/secret-scan.sh
+```
+
+Git hooks can be bypassed with `--no-verify` (e.g. `git commit --no-verify`), but this should be
+reserved for exceptional cases.
+
 Build and install the app:
 
 ```bash
@@ -1070,6 +1103,7 @@ This project demonstrates Android engineering practices such as:
 - continuous integration
 - automated testing
 - incremental delivery through reviewable Pull Requests
+- local quality gates (Git hooks) that mirror CI checks before code ever reaches a push
 
 ---
 
