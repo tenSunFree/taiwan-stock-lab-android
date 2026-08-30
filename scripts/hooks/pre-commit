@@ -7,6 +7,10 @@
 #   formatting inside a hook can touch unrelated unstaged changes, and some violations (e.g.
 #   max-line-length) aren't auto-correctable anyway
 #
+# Both the gitleaks call and the fallback scanner deliberately never print the matched secret
+# value itself — only which file it's in — since a scanner that echoes the thing it's supposed
+# to catch into your terminal/log defeats its own purpose.
+#
 # Install: ./gradlew installGitHooks
 # Bypass (not recommended): git commit --no-verify
 set -uo pipefail
@@ -23,7 +27,7 @@ echo "==> Secret scan (staged changes)"
 
 if command -v gitleaks >/dev/null 2>&1; then
     echo "gitleaks detected — scanning staged content..."
-    if gitleaks protect --staged --verbose; then
+    if gitleaks protect --staged --verbose --redact; then
         echo "Passed: gitleaks scan"
     else
         echo ""
@@ -41,10 +45,13 @@ else
     # Common credential/key formats, plus generic key=value secrets.
     SECRET_PATTERN="AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[0-9A-Za-z]{20,}|-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----|(password|passwd|secret|token|api[_-]?key)[[:space:]]*[:=][[:space:]]*[\"'][^\"']{6,}[\"']"
 
+    # -diff-filter includes R (renamed) so a rename that also introduces a credential in the
+    # same staged change isn't silently skipped just because its git status is "R" rather than
+    # A/C/M.
     staged_files=()
     while IFS= read -r -d '' file; do
         staged_files+=("$file")
-    done < <(git diff --cached --name-only --diff-filter=ACM -z)
+    done < <(git diff --cached --name-only --diff-filter=ACMR -z)
 
     found_secret=0
     for f in "${staged_files[@]}"; do
@@ -55,7 +62,8 @@ else
             continue
         fi
 
-        # Only scan added lines (+), so removing a secret never blocks the commit.
+        # Only scan added lines (+), so removing a secret never blocks the commit. Only the file
+        # name is reported below — never the matched line itself.
         matches=$(git diff --cached -U0 -- "$f" \
             | grep -E '^\+' | grep -vE '^\+\+\+' \
             | grep -EiA0 -- "$SECRET_PATTERN")
@@ -63,7 +71,6 @@ else
         if [ -n "$matches" ]; then
             echo ""
             echo "Possible secret in: $f"
-            echo "$matches" | sed 's/^/    /'
             found_secret=1
         fi
 
