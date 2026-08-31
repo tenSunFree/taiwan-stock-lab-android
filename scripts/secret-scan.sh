@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # scripts/secret-scan.sh
 #
-# Performs a complete confidential-information scan of the entire working directory and git
-# history. Slower than pre-commit's staged-only scan, but more comprehensive — pre-commit can
-# only catch what's newly staged, not something committed weeks ago before this hook existed.
+# Full repository secret scan, in two passes:
+#   1. Git history       — gitleaks' default mode, walks `git log -p`
+#   2. Current working tree — gitleaks --no-git, scans files directly rather than commit history
+#
+# These are genuinely different checks: a plain `gitleaks detect --source .` only walks commit
+# history by default and does NOT inspect uncommitted working-tree content, so without the
+# second pass this script would silently fail to scan anything not yet committed.
 #
 # Recommended usage:
 #   - Before opening a PR
@@ -11,7 +15,8 @@
 #   - After major changes
 #   - When you suspect you've previously committed a secret
 #
-# Not recommended to run on every commit (too slow) — that's what pre-commit's staged scan is for.
+# Not recommended to run on every commit (too slow, and walks the full history every time) —
+# that's what pre-commit's staged-only scan is for.
 #
 # Usage: bash scripts/secret-scan.sh
 
@@ -20,7 +25,8 @@ cd "$(git rev-parse --show-toplevel)"
 
 if ! command -v gitleaks >/dev/null 2>&1; then
     echo ""
-    echo "gitleaks not found, unable to perform a full scan."
+    echo "gitleaks not found — unable to perform the full secret scan."
+    echo ""
     echo "Installation:"
     echo "  macOS         : brew install gitleaks"
     echo "  Windows Scoop : scoop install gitleaks"
@@ -30,16 +36,29 @@ if ! command -v gitleaks >/dev/null 2>&1; then
 fi
 
 echo ""
-echo "==> gitleaks detect (working directory + git history)"
+echo "[secret-scan] Running full repository scan..."
 
-if gitleaks detect --source . --verbose; then
-    echo ""
-    echo "Passed: no confidential information detected"
+echo ""
+echo "==> Git history"
+if gitleaks detect --source . --verbose --redact; then
+    echo "Passed: git history"
 else
-    STATUS=$?
+    status=$?
     echo ""
-    echo "gitleaks detected potentially confidential information (exit code: $STATUS)"
-    echo "If it is confirmed to be a false positive, create a .gitleaks.toml file to set an allowlist:"
-    echo "https://github.com/gitleaks/gitleaks#configuration"
-    exit 1
+    echo "Potential confidential information detected in git history (exit code: $status)."
+    exit "$status"
 fi
+
+echo ""
+echo "==> Current working tree"
+if gitleaks detect --source . --no-git --verbose --redact; then
+    echo "Passed: working tree"
+else
+    status=$?
+    echo ""
+    echo "Potential confidential information detected in the working tree (exit code: $status)."
+    exit "$status"
+fi
+
+echo ""
+echo "[secret-scan] All checks passed."

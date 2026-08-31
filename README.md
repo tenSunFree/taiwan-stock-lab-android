@@ -698,9 +698,10 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 
 **CI/CD**
 
-- GitHub Actions, two parallel jobs on every push/PR to `main`:
+- GitHub Actions, three parallel jobs on every push/PR to `main`:
     - `static-analysis` — ktlint + detekt
     - `test-build` — JVM unit tests, Android Lint, debug build
+    - `secret-scan` — gitleaks against the full commit history
 - ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
   reports are uploaded as workflow artifacts (7-day retention) when produced
 
@@ -794,20 +795,28 @@ observeMarketSummary_mapsTheAggregateRowToADomainSummary
 ## Continuous Integration
 
 Every push to `main` and every pull request triggers a GitHub Actions workflow
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) with two parallel jobs:
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) with three parallel jobs:
 
 ```text
 static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck → detekt
 test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug →
                   assembleDebugAndroidTest
+secret-scan:      checkout (full history) → gitleaks
 ```
 
-`static-analysis` and `test-build` run as independent, parallel jobs — a `static-analysis` failure
-does not block or gate `test-build`. `ktlintCheck` and `detekt` run across all modules and fail the
-`static-analysis` job on any enabled rule violation — no detekt baseline is used, so every finding
-must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable` functions
-use annotation-scoped naming exceptions, while the existing underscore-based base package retains an
-explicit package-naming exemption.
+`static-analysis`, `test-build`, and `secret-scan` run as independent, parallel jobs — a failure in
+one does not block or gate the others. `ktlintCheck` and `detekt` run across all modules and fail
+the `static-analysis` job on any enabled rule violation — no detekt baseline is used, so every
+finding must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable`
+functions use annotation-scoped naming exceptions, while the existing underscore-based base package
+retains an explicit package-naming exemption.
+
+`secret-scan` runs [gitleaks](https://github.com/gitleaks/gitleaks) against the full commit history
+(`fetch-depth: 0` — a shallow checkout would only expose the single triggering commit) as a
+CI-level backstop independent of the local `pre-commit`/`scripts/secret-scan.sh` checks: those only
+run if a contributor has installed the hooks (`./gradlew installGitHooks`) or remembers to run the
+manual script, and either can be bypassed with `git commit --no-verify`. `secret-scan` catches what
+gets through regardless of local setup.
 
 ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), test reports, and
 Android Lint reports are uploaded as workflow artifacts (7-day retention) whenever the corresponding
@@ -876,7 +885,7 @@ drift out of sync with the tracked source whenever a hook is edited.
 
 | Hook | Runs on | What it checks |
 |---|---|---|
-| `pre-commit` | every `git commit` | Secret scan on staged changes (`gitleaks`, or a built-in regex/filename fallback if `gitleaks` isn't installed); `ktlintCheck` on staged Kotlin/Kotlin-DSL files only |
+| `pre-commit` | every `git commit` | Repository-specific forbidden-file check (`google-services.json`, keystores, `local.properties`, etc. — runs regardless of whether `gitleaks` is installed); secret scan on staged changes (`gitleaks`, or a built-in regex fallback otherwise); `ktlintCheck` on staged Kotlin/Kotlin-DSL files only |
 | `commit-msg` | every `git commit` | Commit message follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `test:`, `chore:`, etc.) |
 | `pre-push` | every `git push` | `ktlintCheck`, `detekt`, `test`, `lint`, `assembleDebug`, and `assembleDebugAndroidTest` — the same non-emulator checks CI runs, so a push that would fail CI fails locally first |
 
@@ -885,8 +894,9 @@ issue explicitly (e.g. `./gradlew ktlintFormat`) and re-`git add` before committ
 `connectedDebugAndroidTest` (requires an emulator or device) is intentionally not part of any
 hook and stays a manual step.
 
-For a full working-directory-and-history secret scan (recommended before opening a PR or cutting
-a release, not on every commit — it's slower than the staged-only `pre-commit` scan):
+For a full two-pass scan of both git history and the current working tree (recommended before
+opening a PR or cutting a release, not on every commit — it's slower than the staged-only
+`pre-commit` scan, and requires `gitleaks` to be installed):
 
 ```bash
 bash scripts/secret-scan.sh

@@ -154,3 +154,29 @@ jobs:
             feature/stocklist/build/reports/lint-results-*.html
           retention-days: 7
           if-no-files-found: ignore
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # fetch-depth: 0 is required here — gitleaks-action scans commit history via `git log`, and
+      # the default shallow (depth-1) checkout would only expose the single triggering commit,
+      # silently turning this into a scan of almost nothing.
+      #
+      # Still pinned to v4 here for consistency with the other two jobs above, even though
+      # gitleaks-action@v3's own docs recommend actions/checkout@v6 for Node 24 alignment ahead
+      # of GitHub's Sept 16, 2026 Node 20 removal. Bumping checkout across the whole workflow is
+      # a separate, repo-wide follow-up rather than a one-off version in a single job.
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
