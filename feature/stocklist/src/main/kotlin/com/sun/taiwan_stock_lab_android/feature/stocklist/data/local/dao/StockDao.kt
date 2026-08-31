@@ -31,11 +31,18 @@ interface StockDao {
     // StockEntityMapper.toEntity — the raw TWSE missing-value sentinels like "-" are already
     // normalized to null by TwseNumericParser before a Stock is ever persisted), so CAST(...
     // AS REAL) here is safe: it never has to guess at un-normalized text.
+    //
+    // COALESCE(..., 0) makes the empty-table case (SUM() over zero rows) explicit in the SQL
+    // itself, rather than relying on how the underlying driver or Room happens to map a NULL
+    // aggregate result onto a non-nullable Int field.
     @Query(
         "SELECT " +
-            "SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) > 0 THEN 1 ELSE 0 END) AS advancingCount, " +
-            "SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) < 0 THEN 1 ELSE 0 END) AS decliningCount, " +
-            "SUM(CASE WHEN change IS NULL OR CAST(change AS REAL) = 0 THEN 1 ELSE 0 END) AS unchangedCount " +
+            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) > 0 " +
+            "THEN 1 ELSE 0 END), 0) AS advancingCount, " +
+            "COALESCE(SUM(CASE WHEN change IS NOT NULL AND CAST(change AS REAL) < 0 " +
+            "THEN 1 ELSE 0 END), 0) AS decliningCount, " +
+            "COALESCE(SUM(CASE WHEN change IS NULL OR CAST(change AS REAL) = 0 " +
+            "THEN 1 ELSE 0 END), 0) AS unchangedCount " +
             "FROM stocks",
     )
     fun observeMarketSummary(): Flow<MarketSummaryRow>

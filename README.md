@@ -698,9 +698,10 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 
 **CI/CD**
 
-- GitHub Actions, two parallel jobs on every push/PR to `main`:
+- GitHub Actions, three parallel jobs on every push/PR to `main`:
     - `static-analysis` — ktlint + detekt
     - `test-build` — JVM unit tests, Android Lint, debug build
+    - `secret-scan` — gitleaks against the full commit history
 - ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
   reports are uploaded as workflow artifacts (7-day retention) when produced
 
@@ -736,7 +737,12 @@ stock lookup (`getStock`, found/not-found), mapping the market-summary aggregate
 cache after network failure/empty snapshot, and propagating `CancellationException`.
 
 **Room DAO** — `StockDaoTest` is an Android instrumentation test using a real in-memory Room
-database with `BundledSQLiteDriver`, covering atomic stock+metadata replacement.
+database with `BundledSQLiteDriver`, covering transactional stock+refresh-metadata replacement
+(the success path — no test deliberately fails partway through a `replaceAll()` to verify
+rollback), ascending/descending paged queries exercised via genuine `Refresh`/`Append`
+`PagingSource.load()` calls (not a one-shot "load everything" workaround), single-row lookup by
+code, and the market-summary SQL aggregate across every bucket — including the case a `NULL`
+`change` column is correctly counted as unchanged, per SQL's three-valued `NULL = 0` semantics.
 
 **Room Migration** — `StockDatabaseMigrationTest` uses Room's `MigrationTestHelper` to verify
 `MIGRATION_1_2` preserves existing stock rows and correctly adds the `refresh_metadata` table.
@@ -761,8 +767,8 @@ thousands-separator formatting, and the `+`/`-` sign on the change value.
 **Market Summary Mapping** — `MarketSummaryMapperTest` verifies the trivial field mapping from the
 domain `MarketChangeSummary` to the presentation `MarketSummary`. The advancing/declining/unchanged
 *counting* logic itself moved into a Room SQL aggregate (`StockDao.observeMarketSummary`); dedicated
-`StockDaoTest` coverage for that aggregate — including how a `NULL` `change` column is bucketed — is
-not yet written (see [Roadmap](#roadmap)).
+coverage for that aggregate — including how a `NULL` `change` column is bucketed — lives in
+`StockDaoTest` (see the **Room DAO** entry above).
 
 Notable test names:
 
@@ -789,28 +795,41 @@ observeMarketSummary_mapsTheAggregateRowToADomainSummary
 ## Continuous Integration
 
 Every push to `main` and every pull request triggers a GitHub Actions workflow
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) with two parallel jobs:
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) with three parallel jobs:
 
 ```text
 static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck → detekt
-test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug
+test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug →
+                  assembleDebugAndroidTest
+secret-scan:      checkout (full history) → gitleaks
 ```
 
-`static-analysis` and `test-build` run as independent, parallel jobs — a `static-analysis` failure
-does not block or gate `test-build`. `ktlintCheck` and `detekt` run across all modules and fail the
-`static-analysis` job on any enabled rule violation — no detekt baseline is used, so every finding
-must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable` functions
-use annotation-scoped naming exceptions, while the existing underscore-based base package retains an
-explicit package-naming exemption.
+`static-analysis`, `test-build`, and `secret-scan` run as independent, parallel jobs — a failure in
+one does not block or gate the others. `ktlintCheck` and `detekt` run across all modules and fail
+the `static-analysis` job on any enabled rule violation — no detekt baseline is used, so every
+finding must be resolved or narrowly suppressed with an explicit rationale. Compose `@Composable`
+functions use annotation-scoped naming exceptions, while the existing underscore-based base package
+retains an explicit package-naming exemption.
+
+`secret-scan` runs [gitleaks](https://github.com/gitleaks/gitleaks) against the full commit history
+(`fetch-depth: 0` — a shallow checkout would only expose the single triggering commit) as a
+CI-level backstop independent of the local `pre-commit`/`scripts/secret-scan.sh` checks: those only
+run if a contributor has installed the hooks (`./gradlew installGitHooks`) or remembers to run the
+manual script, and either can be bypassed with `git commit --no-verify`. `secret-scan` catches what
+gets through regardless of local setup.
 
 ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), test reports, and
 Android Lint reports are uploaded as workflow artifacts (7-day retention) whenever the corresponding
 task produces them, regardless of whether the job passes or fails, so a failure can usually be
 diagnosed directly from the Actions run without reproducing it locally.
 
-Instrumented tests (`connectedDebugAndroidTest`) are not run in this workflow, since Android
+Instrumented tests (`connectedDebugAndroidTest`) are not *run* in this workflow, since Android
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
-rather than blocking every push.
+rather than blocking every push. `test-build` does compile them (`assembleDebugAndroidTest`),
+though — the `androidTest` source set (e.g. `StockDaoTest`) isn't touched by `test` (JVM-only),
+`lint`, or `assembleDebug`, so without this step a production API change could silently break an
+instrumentation test with no CI job noticing until someone happens to run it against a real
+device.
 
 ---
 
@@ -827,33 +846,6 @@ The repository also contains a [Pull Request template](.github/pull_request_temp
 Summary, Changes, Architecture, Verification, Screenshots, Notes, and Related work.
 A [GitHub Actions workflow](.github/workflows/ci.yml) runs tests, lint, and a debug build on every
 push and pull request against `main`.
-
----
-
-## Roadmap
-
-| Stage                    | Scope                                                                                                 | Status    |
-|--------------------------|-------------------------------------------------------------------------------------------------------|-----------|
-| Project foundation       | Multi-module setup, Version Catalog, `core:common`                                                    | ✅ Done    |
-| Network infrastructure   | Retrofit, OkHttp, Moshi, `core:network`                                                               | ✅ Done    |
-| TWSE remote layer        | API service and DTOs                                                                                  | ✅ Done    |
-| Domain + aggregation     | `Stock`, numeric parsing, concurrent fetch, merge by code                                             | ✅ Done    |
-| Persistence              | Room 3, DAO, schema export                                                                            | ✅ Done    |
-| Offline-first repository | Room source of truth, refresh/cache policy                                                            | ✅ Done    |
-| Dependency injection     | Hilt composition root                                                                                 | ✅ Done    |
-| Presentation state       | ViewModel + MVI-style UDF                                                                             | ✅ Done    |
-| XML UI                   | Stock list, sorting, detail dialog                                                                    | ✅ Done    |
-| Cache metadata           | Local data source abstraction, loading-state fix, last-updated timestamp, schema migration            | ✅ Done    |
-| Sort UX polish           | Single-selection sort UI, atomic sort state, stable scroll-to-top                                     | ✅ Done    |
-| Quality tooling          | GitHub Actions CI (test, lint, build)                                                                 | ✅ Done    |
-| Compose interoperability | `ComposeView` custom components (`MarketSummaryBar`)                                                  | ✅ Done    |
-| Quality tooling          | ktlint, detekt — plugin wiring and minimal config across all modules                                  | ✅ Done    |
-| Quality tooling          | ktlint, detekt — formatting pass and enabled-rule findings resolved (zero baseline)                   | ✅ Done    |
-| Quality tooling          | ktlint, detekt — CI integration                                                                       | ✅ Done    |
-| Observability            | Firebase Crashlytics (optional, config-gated), LeakCanary (debug-only)                                | ✅ Done    |
-| Polish                   | Dark mode verification, rotation-safe dialogs (`FragmentManager`), narrower item animations           | ✅ Done    |
-| Scaling                  | Paging 3 foundation for the stock list (Room `PagingSource`, `Pager`, `PagingDataAdapter`, DB-side market-summary aggregate) | ✅ Done    |
-| Testing                  | `StockDaoTest` coverage for the paged queries and the market-summary SQL aggregate (including `NULL` `change` bucketing)     | ⏳ Next    |
 
 ---
 
@@ -878,6 +870,40 @@ Clone the repository:
 git clone https://github.com/kw012345678/taiwan-stock-lab-android.git
 cd taiwan-stock-lab-android
 ```
+
+### Local Git Hooks
+
+This repository tracks Git hooks under `scripts/hooks/`. Configure Git to use them once per clone:
+
+```bash
+./gradlew installGitHooks
+```
+
+This sets `core.hooksPath` to `scripts/hooks` (verify with `git config --get core.hooksPath`),
+rather than copying files into `.git/hooks/` — `.git/hooks/` isn't version-controlled and would
+drift out of sync with the tracked source whenever a hook is edited.
+
+| Hook | Runs on | What it checks |
+|---|---|---|
+| `pre-commit` | every `git commit` | Repository-specific forbidden-file check (`google-services.json`, keystores, `local.properties`, etc. — runs regardless of whether `gitleaks` is installed); secret scan on staged changes (`gitleaks`, or a built-in regex fallback otherwise); `ktlintCheck` on staged Kotlin/Kotlin-DSL files only |
+| `commit-msg` | every `git commit` | Commit message follows [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `test:`, `chore:`, etc.) |
+| `pre-push` | every `git push` | `ktlintCheck`, `detekt`, `test`, `lint`, `assembleDebug`, and `assembleDebugAndroidTest` — the same non-emulator checks CI runs, so a push that would fail CI fails locally first |
+
+Neither hook modifies the working tree or auto-stages anything — if `pre-commit` fails, fix the
+issue explicitly (e.g. `./gradlew ktlintFormat`) and re-`git add` before committing again.
+`connectedDebugAndroidTest` (requires an emulator or device) is intentionally not part of any
+hook and stays a manual step.
+
+For a full two-pass scan of both git history and the current working tree (recommended before
+opening a PR or cutting a release, not on every commit — it's slower than the staged-only
+`pre-commit` scan, and requires `gitleaks` to be installed):
+
+```bash
+bash scripts/secret-scan.sh
+```
+
+Git hooks can be bypassed with `--no-verify` (e.g. `git commit --no-verify`), but this should be
+reserved for exceptional cases.
 
 Build and install the app:
 
@@ -1087,6 +1113,7 @@ This project demonstrates Android engineering practices such as:
 - continuous integration
 - automated testing
 - incremental delivery through reviewable Pull Requests
+- local quality gates (Git hooks) that mirror CI checks before code ever reaches a push
 
 ---
 

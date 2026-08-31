@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Fast commit-time quality gate:
+#   1. Repository-specific forbidden-file policy (always runs, regardless of gitleaks)
+#   2. Secret scan of staged changes (gitleaks, or a built-in regex fallback)
+#   3. ktlintCheck when staged Kotlin/Kotlin-DSL changes exist
+#
+# This hook never modifies the working tree and never auto-stages files. Neither the gitleaks
+# call nor the fallback scanner prints the matched secret value itself — only which file it's
+# in — since a scanner that echoes the thing it's supposed to catch into your terminal/log
+# defeats its own purpose.
+#
+# Install: ./gradlew installGitHooks
+# Bypass (exceptional use only): git commit --no-verify
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+echo ""
+echo "[pre-commit] Running checks..."
+
+# ============================================================
+# Collect staged paths once, shared by steps 1 and 2
+# ============================================================
+# --diff-filter=d (lowercase) means "exclude Deleted" and include everything else Git
+# distinguishes (A/C/M/R/T/U/X/B) — this avoids the whack-a-mole of enumerating individual
+# letters (ACM, then ACMR, then ACMRT, ...) only to have the next edge case slip through again.
+staged_files=()
+while IFS= read -r -d '' file; do
+    staged_files+=("$file")
+done < <(git diff --cached --name-only --diff-filter=d -z)
+
+# ============================================================
+# 1. Repository-specific forbidden files — always checked, independent of whether gitleaks is
+#    installed. A Firebase config or keystore isn't a "secret" in the credential-pattern sense
+#    gitleaks looks for; it's a project-specific file this public repo must never track,
+#    regardless of which secret scanner (if any) happens to be installed.
+# ============================================================
+echo ""
+echo "==> Forbidden-file check"
+
+found_forbidden_file=0
+
+for f in "${staged_files[@]}"; do
+    # `*google-services.json` / `*local.properties` (leading `*`, no literal path) match both a
+    # bare root-level file and any nested path (e.g. app/google-services.json), since shell glob
+    # `*` matches `/` too — a bare `google-services.json` pattern would miss the nested case
+    # entirely, which is where this file actually lives in this project.
+    case "$f" in
+        *google-services.json | *local.properties | *.jks | *.keystore | *.pem | *.p12 | *id_rsa* | *id_ed25519*)
+            echo ""
+            echo "File must not be committed: $f"
+            found_forbidden_file=1
+            ;;
+    esac
+done
+
+if [ "$found_forbidden_file" -ne 0 ]; then
+    echo ""
+    echo "Commit aborted because repository-local or credential files are staged."
+    echo "Unstage them and verify .gitignore before committing."
+    exit 1
+fi
+
+echo "Passed: forbidden-file check"
+
+# ============================================================
+# 2. Secret scan — staged changes only
+# ============================================================
+echo ""
+echo "==> Secret scan (staged changes)"
+
+if command -v gitleaks >/dev/null 2>&1; then
+    echo "gitleaks detected — scanning staged content..."
+    if gitleaks protect --staged --verbose --redact; then
+        echo "Passed: gitleaks scan"
+    else
+        status=$?
+        echo ""
+        echo "gitleaks detected potentially confidential content. Commit aborted (exit code: $status)."
+        echo "If this is a false positive, add an allowlist entry to .gitleaks.toml."
+        echo "To skip (not recommended): git commit --no-verify"
+        exit "$status"
+    fi
+else
+    echo "gitleaks not installed — using the built-in fallback scanner."
+    echo "The fallback is intentionally narrower than gitleaks. For a more complete scan"
+    echo "(entropy analysis, full rule base), install gitleaks:"
+    echo "https://github.com/gitleaks/gitleaks#installing"
+    echo ""
+
+    SECRET_PATTERN='AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-[0-9A-Za-z]{20,}|-----BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY-----|(password|passwd|secret|token|api[_-]?key)[[:space:]]*[:=][[:space:]]*["'\''][^"'\'']{6,}["'\'']'
+
+    found_secret=0
+
+    for f in "${staged_files[@]}"; do
+        # Only added lines (+), so removing a secret never blocks the commit. Only the filename
+        # is reported below — never the matched line itself. Deliberately no `grep -q` here:
+        # under `pipefail`, an early-exiting `-q` can send SIGPIPE to the upstream `git diff`,
+        # which pipefail then reports as a pipeline failure independent of whether grep actually
+        # matched — redirecting to /dev/null and checking the pipeline's own exit status avoids
+        # that false negative.
+        if git diff --cached --no-ext-diff --unified=0 -- "$f" \
+            | grep -E '^\+' | grep -vE '^\+\+\+' \
+            | grep -Ei -- "$SECRET_PATTERN" >/dev/null; then
+            echo ""
+            echo "Possible secret in: $f"
+            found_secret=1
+        fi
+    done
+
+    if [ "$found_secret" -ne 0 ]; then
+        echo ""
+        echo "The fallback scanner found potentially confidential content. Commit aborted."
+        echo "If this is a false positive, use 'git commit --no-verify' to skip it (not recommended)."
+        exit 1
+    fi
+
+    echo "Passed: fallback secret scan"
+fi
+
+# ============================================================
+# 3. ktlintCheck — only when Kotlin changes are staged
+# ============================================================
+echo ""
+echo "==> ktlintCheck"
+
+staged_kotlin_files=$(git diff --cached --name-only --diff-filter=d -- '*.kt' '*.kts')
+
+if [ -z "$staged_kotlin_files" ]; then
+    echo "No staged Kotlin/Kotlin-DSL files — skipping."
+else
+    echo "Kotlin changes detected — running ktlintCheck..."
+    if ./gradlew ktlintCheck --quiet; then
+        echo "Passed: ktlintCheck"
+    else
+        status=$?
+        echo ""
+        echo "ktlintCheck found violations. Commit aborted (exit code: $status)."
+        echo "Run './gradlew ktlintFormat' to auto-fix what it can, then fix the rest by hand."
+        exit "$status"
+    fi
+fi
+
+echo ""
+echo "[pre-commit] All checks passed."
+exit 0

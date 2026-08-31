@@ -1,0 +1,29 @@
+#!/bin/sh
+# Push-time quality gate — mirrors the repository's non-emulator CI checks as closely as
+# practical, so a push that would fail CI fails here first:
+#
+#   - ktlintCheck
+#   - detekt
+#   - JVM unit tests
+#   - Android Lint
+#   - debug build
+#   - androidTest compilation (catches production API drift breaking src/androidTest — see
+#     StockDaoTest's dao.observeAll() incident; `./gradlew test` never compiles this source set)
+#
+# connectedDebugAndroidTest is intentionally NOT included — it requires a running emulator or
+# physical device, so it stays an explicit manual step:
+#
+#   ./gradlew :feature:stocklist:connectedDebugAndroidTest
+set -e
+
+echo "[pre-push] Running local CI gate..."
+./gradlew \
+    ktlintCheck \
+    detekt \
+    test \
+    lint \
+    assembleDebug \
+    :feature:stocklist:assembleDebugAndroidTest \
+    :app:assembleDebugAndroidTest
+
+echo "[pre-push] All checks passed."
