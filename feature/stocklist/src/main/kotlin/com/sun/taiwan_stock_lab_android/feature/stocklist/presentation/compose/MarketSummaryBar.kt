@@ -17,13 +17,6 @@ import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabColors
 import com.sun.taiwan_stock_lab_android.core.ui.theme.StockLabTheme
 import com.sun.taiwan_stock_lab_android.feature.stocklist.presentation.model.MarketSummary
 
-object MarketSummaryBarTestTags {
-    const val ROOT = "marketSummaryBar"
-    const val ADVANCING = "marketSummaryBar_advancing"
-    const val DECLINING = "marketSummaryBar_declining"
-    const val UNCHANGED = "marketSummaryBar_unchanged"
-}
-
 @Composable
 fun MarketSummaryBar(
     summary: MarketSummary,

@@ -51,6 +51,7 @@ dependencies {
     testRuntimeOnly(libs.junit5.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.androidx.paging.testing)
     androidTestImplementation(libs.androidx.junit)
