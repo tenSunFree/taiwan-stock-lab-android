@@ -8,7 +8,7 @@
 [![Paging](https://img.shields.io/badge/Paging-Room%20PagingSource%20%2B%20SQL%20Aggregates-4285F4)](#offline-first-architecture)
 [![DI](https://img.shields.io/badge/DI-Hilt-49A84A)](#dependency-injection)
 [![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
-[![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK-FF9800)](#testing)
+[![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK%20%2B%20Espresso%2FCompose-FF9800)](#testing)
 [![Code Quality](https://img.shields.io/badge/Code%20Quality-ktlint%20%2B%20detekt-blueviolet)](#tech-stack)
 [![Observability](https://img.shields.io/badge/Observability-Crashlytics%20%2B%20LeakCanary-FFCA28?logo=firebase&logoColor=black)](#tech-stack)
 [![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
@@ -24,8 +24,8 @@ aggregating valuation, daily price, average-price, and trading data for listed s
 The current implementation is built with Kotlin, Clean Architecture, a multi-module Gradle setup,
 structured concurrency, an offline-first Room 3 persistence layer, a Hilt-based dependency injection
 composition root, a Hilt-injected presentation state layer using MVI-style Unidirectional Data Flow,
-an XML-based stock list screen with a Compose-based market summary component, and a GitHub Actions
-CI pipeline.
+an XML-based stock list screen with a Compose-based market summary component, Espresso and Compose
+UI test coverage across both the XML and Compose surfaces, and a GitHub Actions CI pipeline.
 
 This repository is intended for learning, technical assessment, and engineering demonstration
 purposes.
@@ -89,6 +89,12 @@ purposes.
 - Compose-based market summary bar (`MarketSummaryBar`) embedded into the XML screen via
   `ComposeView`, showing advancing/declining/unchanged stock counts computed by a pure,
   independently-testable function
+- Espresso UI tests for the XML stock list screen (RecyclerView item click → stock detail dialog),
+  a pure Compose UI test for `MarketSummaryBar` using the semantics tree, and a mixed
+  Espresso + Compose UI test (`createAndroidComposeRule<MainActivity>`) covering sort-direction
+  changes that reorder the XML `RecyclerView` while asserting the embedded Compose content stays
+  correct — backed by a `FakeStockRepository` installed via Hilt `@TestInstallIn`, so these tests
+  never hit the real TWSE API
 - GitHub Actions CI running ktlint, detekt, JVM unit tests, Android Lint, and a debug build on every
   push to `main` and every pull request, split into parallel `static-analysis` and `test-build` jobs
 - JVM unit tests and Android instrumentation tests
@@ -354,6 +360,10 @@ types (`StockDatabase`, `StockDao`), while `StockRepositoryModule` provides both
 presentation layer (`StockListViewModel`) is the one exception to the "no Hilt in feature classes"
 rule — see below.
 
+For instrumented UI tests, `app/src/androidTest`'s `FakeStockRepositoryModule` uses Hilt's
+`@TestInstallIn` to replace `StockRepositoryModule` with a `FakeStockRepository` — see
+[Testing](#testing).
+
 ### Presentation State
 
 `StockListViewModel` follows an MVI-style Unidirectional Data Flow contract:
@@ -508,6 +518,13 @@ relying on Material 3's unconfigured defaults, and `StockLabColors.priceUp`/`pri
 existing XML color resources (`stock_price_up`/`stock_price_down`) so Compose and XML share the same
 stock-market color convention instead of diverging into two separate palettes.
 
+`MarketSummaryBar` also exposes a `MarketSummaryBarTestTags` object (`ROOT`, `ADVANCING`,
+`DECLINING`, `UNCHANGED`) and applies `Modifier.testTag(...)` plus
+`Modifier.semantics(mergeDescendants = true) {}` on each summary item — the latter collapses the
+label and count `Text` composables' semantics onto the tagged node, since a plain `Row` does not
+merge its children's semantics by default. Compose UI Test then queries this composable through
+its semantics tree (`onNodeWithTag`) instead of View IDs — see [Testing](#testing).
+
 ### Feature-Internal Layering
 
 `:feature:stocklist` uses package-level Clean Architecture layering instead of splitting every layer
@@ -604,6 +621,7 @@ feature/stocklist/
 - Application-level composition root, modules organized by responsibility (network, database,
   repository)
 - Data and domain layers remain Hilt-independent
+- `@TestInstallIn` used in instrumented tests to swap production modules for deterministic fakes
 
 **Presentation**
 
@@ -633,6 +651,8 @@ feature/stocklist/
 - Compose Material 3
 - `ComposeView` embedded within an XML screen
 - Explicit `StockLabTheme` / `StockLabColors` shared with XML color resources
+- Semantics-based test tags (`MarketSummaryBarTestTags`, `Modifier.testTag`,
+  `Modifier.semantics(mergeDescendants = true)`) for Compose UI Test
 
 **Code Quality**
 
@@ -695,6 +715,12 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - Room in-memory database tests
 - Room `MigrationTestHelper`
 - Hilt instrumentation testing (`hilt-android-testing`, custom `HiltTestRunner`)
+- Hilt `@TestInstallIn` for swapping the production `StockRepository` with a deterministic
+  `FakeStockRepository` in instrumented tests, avoiding real network calls
+- Espresso (`espresso-core`, `espresso-contrib` for `RecyclerViewActions`) for XML/View screen tests
+- Compose UI Test (`ui-test-junit4`, `ui-test-manifest`) — `createComposeRule()` for isolated
+  Compose component tests, `createAndroidComposeRule<MainActivity>()` for mixed XML + Compose
+  screen tests
 
 **CI/CD**
 
@@ -704,10 +730,6 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
     - `secret-scan` — gitleaks against the full commit history
 - ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
   reports are uploaded as workflow artifacts (7-day retention) when produced
-
-**Planned**
-
-- Espresso UI tests
 
 ---
 
@@ -760,6 +782,29 @@ sourceLoadStates = ...)` is used with explicit `LoadStates` rather than the no-a
 since `stocksPagingData` is built on a non-completable `MutableStateFlow` upstream — without
 explicit `LoadStates`, `asSnapshot()` has no signal that a page finished loading and hangs.
 
+**XML Screen (Espresso)** — `StockListEspressoTest` verifies that tapping the first stock card in
+the `RecyclerView` opens `StockDetailDialogFragment` with the matching stock code, using
+`RecyclerViewActions` (`espresso-contrib`) and a custom `BoundedMatcher` (`withRecyclerViewItem`)
+to assert on a specific adapter position's bound content.
+
+**Compose Component (Compose UI Test)** — `MarketSummaryBarTest` renders `MarketSummaryBar` in
+isolation via `createComposeRule()` and asserts on its semantics tree (`onNodeWithTag`,
+`assertTextContains`) rather than View IDs — it needs no Activity, Hilt, or repository.
+
+**Mixed XML + Compose Screen** — `StockListMixedComposeEspressoTest` uses
+`createAndroidComposeRule<MainActivity>()` to drive Espresso against the XML Toolbar,
+`SortBottomSheetFragment`, and `RecyclerView` (changing sort direction) in the same test as Compose
+UI Test assertions against the embedded `MarketSummaryBar`. A `waitUntilEspressoAssertionPasses`
+helper polls Espresso assertions via `ComposeTestRule.waitUntil`, bridging the asynchronous Room
+re-query + Paging diff triggered by the sort change — Espresso does not automatically synchronize
+with that kind of application-specific coroutine work.
+
+All three instrumented UI tests run against a `FakeStockRepository` installed via a Hilt
+`@TestInstallIn` module (`FakeStockRepositoryModule`, replacing the production
+`StockRepositoryModule`), so they exercise the presentation and Paging/adapter layers
+deterministically without depending on Room or the real TWSE network call — Room itself remains
+covered separately by `StockDaoTest` and `StockDatabaseMigrationTest`.
+
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below
 monthly average), change-direction classification (positive/negative), null-value placeholders,
 thousands-separator formatting, and the `+`/`-` sign on the change value.
@@ -788,6 +833,9 @@ selectingCurrentSortDirection_isANoOp
 stocksPagingData_reflectsRepositoryStocksForTheDefaultSortDirection
 observeStocksPaged_mapsEntitiesToDomainStocks
 observeMarketSummary_mapsTheAggregateRowToADomainSummary
+clickingFirstStockCard_opensDetailDialogWithMatchingStock
+marketSummaryBar_displaysMarketCounts
+sortingViaEspresso_reordersRecyclerView_whileComposeSummaryStaysCorrect
 ```
 
 ---
@@ -826,7 +874,8 @@ diagnosed directly from the Actions run without reproducing it locally.
 Instrumented tests (`connectedDebugAndroidTest`) are not *run* in this workflow, since Android
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
 rather than blocking every push. `test-build` does compile them (`assembleDebugAndroidTest`),
-though — the `androidTest` source set (e.g. `StockDaoTest`) isn't touched by `test` (JVM-only),
+though — the `androidTest` source set (e.g. `StockDaoTest`, `StockListEspressoTest`,
+`MarketSummaryBarTest`, `StockListMixedComposeEspressoTest`) isn't touched by `test` (JVM-only),
 `lint`, or `assembleDebug`, so without this step a production API change could silently break an
 instrumentation test with no CI job noticing until someone happens to run it against a real
 device.
@@ -838,7 +887,7 @@ device.
 The repository is developed through small, independently reviewable Pull Requests. Each
 architectural concern is introduced in its own focused change, such as: project foundation, network
 infrastructure, TWSE aggregation, Room persistence, dependency injection, presentation state, UI,
-and quality tooling.
+UI testing, and quality tooling.
 
 Dependencies are introduced when first needed rather than being added up front.
 
@@ -867,7 +916,7 @@ push and pull request against `main`.
 Clone the repository:
 
 ```bash
-git clone https://github.com/kw012345678/taiwan-stock-lab-android.git
+git clone https://github.com/tenSunFree/taiwan-stock-lab-android.git
 cd taiwan-stock-lab-android
 ```
 
@@ -925,14 +974,15 @@ Run stock-list unit tests:
 ./gradlew :feature:stocklist:testDebugUnitTest
 ```
 
-Run Room instrumentation tests, including the schema migration test (requires a running emulator or
-physical device):
+Run Room instrumentation tests, including the schema migration test and the Compose UI test for
+`MarketSummaryBar` (requires a running emulator or physical device):
 
 ```bash
 ./gradlew :feature:stocklist:connectedDebugAndroidTest
 ```
 
-Run Hilt dependency-graph instrumentation tests (requires a running emulator or physical device):
+Run Hilt dependency-graph instrumentation tests, the Espresso XML screen test, and the mixed
+Espresso + Compose UI test (requires a running emulator or physical device):
 
 ```bash
 ./gradlew :app:connectedDebugAndroidTest
@@ -998,7 +1048,16 @@ taiwan-stock-lab-android/
 │       └── androidTest/
 │           └── java/com/sun/taiwan_stock_lab_android/
 │               ├── HiltTestRunner.kt
-│               └── StockRepositoryInjectionTest.kt
+│               ├── StockRepositoryInjectionTest.kt
+│               ├── StockListEspressoTest.kt
+│               ├── StockListMixedComposeEspressoTest.kt
+│               ├── di/
+│               │   └── FakeStockRepositoryModule.kt
+│               ├── fake/
+│               │   └── FakeStockRepository.kt
+│               └── util/
+│                   ├── EspressoSync.kt
+│                   └── RecyclerViewMatcher.kt
 │
 ├── core/
 │   ├── common/
@@ -1037,6 +1096,7 @@ taiwan-stock-lab-android/
 │           │   │       ├── StockListViewModel.kt
 │           │   │       ├── adapter/
 │           │   │       ├── compose/
+│           │   │       │   └── MarketSummaryBar.kt
 │           │   │       ├── contract/
 │           │   │       ├── dialog/
 │           │   │       │   ├── SortBottomSheetFragment.kt
@@ -1052,9 +1112,12 @@ taiwan-stock-lab-android/
 │           │
 │           ├── test/kotlin/
 │           └── androidTest/
-│               └── kotlin/.../data/local/
-│                   ├── StockDaoTest.kt
-│                   └── StockDatabaseMigrationTest.kt
+│               └── kotlin/.../
+│                   ├── data/local/
+│                   │   ├── StockDaoTest.kt
+│                   │   └── StockDatabaseMigrationTest.kt
+│                   └── presentation/compose/
+│                       └── MarketSummaryBarTest.kt
 │
 ├── config/
 │   └── detekt/
@@ -1107,6 +1170,8 @@ This project demonstrates Android engineering practices such as:
   lookups on separate, appropriately-scoped queries instead of one full-list read for everything
 - database schema evolution with migration testing
 - XML/Jetpack Compose interoperability
+- Espresso and Compose UI Test coverage across XML views, Compose components, and their
+  interoperability within the same screen, backed by deterministic fakes injected via Hilt
 - repository-wide code-style enforcement
 - static-analysis rule governance
 - zero-baseline static analysis

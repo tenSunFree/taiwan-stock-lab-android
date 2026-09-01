@@ -79,8 +79,12 @@ dependencies {
     // LeakCanary must never be included in release builds.
     debugImplementation(libs.leakcanary.android)
     testImplementation(libs.junit)
+    kspTest(libs.hilt.compiler)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.hilt.android.testing)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.espresso.contrib)
     kspAndroidTest(libs.hilt.compiler)
 }
