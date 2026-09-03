@@ -12,6 +12,7 @@
 [![Code Quality](https://img.shields.io/badge/Code%20Quality-ktlint%20%2B%20detekt-blueviolet)](#tech-stack)
 [![Observability](https://img.shields.io/badge/Observability-Crashlytics%20%2B%20LeakCanary-FFCA28?logo=firebase&logoColor=black)](#tech-stack)
 [![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android/graph/badge.svg)](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android)
 [![Build](https://img.shields.io/badge/Build-Gradle%20Version%20Catalog-02303A?logo=gradle&logoColor=white)](#tech-stack)
 
 ---
@@ -95,8 +96,9 @@ purposes.
   changes that reorder the XML `RecyclerView` while asserting the embedded Compose content stays
   correct — backed by a `FakeStockRepository` installed via Hilt `@TestInstallIn`, so these tests
   never hit the real TWSE API
-- GitHub Actions CI running ktlint, detekt, JVM unit tests, Android Lint, and a debug build on every
-  push to `main` and every pull request, split into parallel `static-analysis` and `test-build` jobs
+- GitHub Actions CI running ktlint, detekt, JVM unit tests, JaCoCo unit-test coverage (uploaded to
+  Codecov), Android Lint, and a debug build on every push to `main` and every pull request, split
+  into parallel `static-analysis` and `test-build` jobs
 - JVM unit tests and Android instrumentation tests
 - ktlint (14.2.0) and detekt (2.0.0-alpha.5) configured across all modules from the root Gradle
   build, with formatting applied and all enabled rules passing
@@ -726,10 +728,13 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 
 - GitHub Actions, three parallel jobs on every push/PR to `main`:
     - `static-analysis` — ktlint + detekt
-    - `test-build` — JVM unit tests, Android Lint, debug build
+    - `test-build` — JVM unit tests, JaCoCo unit-test coverage, Android Lint, debug build
     - `secret-scan` — gitleaks against the full commit history
 - ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
   reports are uploaded as workflow artifacts (7-day retention) when produced
+- JVM unit-test coverage for `:feature:stocklist` is generated via the Android Gradle Plugin's
+  `enableUnitTestCoverage` (JaCoCo under the hood) and uploaded to
+  [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) on every push/PR
 
 ---
 
@@ -741,6 +746,18 @@ The project separates fast JVM unit tests from Android instrumentation tests:
 src/test/          JVM unit tests
 src/androidTest/   Android runtime / integration tests
 ```
+
+**Code Coverage** — JVM unit-test coverage is generated for `:feature:stocklist` via the Android
+Gradle Plugin's `enableUnitTestCoverage` (`createDebugUnitTestCoverageReport`, JaCoCo under the
+hood) and uploaded to [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) on CI.
+It's currently the only module with a `src/test` suite — `app`, `core:common`, `core:network`, and
+`core:ui` have no JVM tests yet, so they aren't included. This coverage also does not include any
+`src/androidTest` tests (`StockDaoTest`, `StockDatabaseMigrationTest`, `MarketSummaryBarTest`,
+`StockListEspressoTest`, `StockListMixedComposeEspressoTest`) — those are instrumentation tests
+that CI currently only compiles (`assembleDebugAndroidTest`), not executes on an emulator, so
+their runtime coverage isn't part of the Codecov report. `codecov.yml`'s status checks are
+currently `informational: true` while the reporting baseline gets established, so they surface
+data without blocking merges.
 
 **Numeric Parsing** — `TwseNumericParserTest` covers null values, empty values, TWSE missing-value
 sentinels, invalid numeric strings, thousands separators, decimal parsing, and integer parsing.
@@ -847,7 +864,8 @@ Every push to `main` and every pull request triggers a GitHub Actions workflow
 
 ```text
 static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck → detekt
-test-build:       checkout → setup JDK 17 → setup Gradle → test → lint → assembleDebug →
+test-build:       checkout → setup JDK 17 → setup Gradle → test →
+                  createDebugUnitTestCoverageReport → upload to Codecov → lint → assembleDebug →
                   assembleDebugAndroidTest
 secret-scan:      checkout (full history) → gitleaks
 ```
@@ -870,6 +888,10 @@ ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), tes
 Android Lint reports are uploaded as workflow artifacts (7-day retention) whenever the corresponding
 task produces them, regardless of whether the job passes or fails, so a failure can usually be
 diagnosed directly from the Actions run without reproducing it locally.
+
+Coverage upload to Codecov uses `fail_ci_if_error: false` — a Codecov outage or misconfigured
+token degrades the coverage report/badge but never fails `test-build` itself, since coverage
+reporting is treated as observability rather than a merge gate at this stage.
 
 Instrumented tests (`connectedDebugAndroidTest`) are not *run* in this workflow, since Android
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
@@ -972,6 +994,13 @@ Run stock-list unit tests:
 
 ```bash
 ./gradlew :feature:stocklist:testDebugUnitTest
+```
+
+Generate JVM unit-test coverage for `:feature:stocklist` (HTML report at
+`feature/stocklist/build/reports/coverage/test/debug/index.html`):
+
+```bash
+./gradlew :feature:stocklist:createDebugUnitTestCoverageReport
 ```
 
 Run Room instrumentation tests, including the schema migration test and the Compose UI test for
@@ -1134,6 +1163,7 @@ taiwan-stock-lab-android/
 │
 ├── .editorconfig
 ├── build.gradle.kts
+├── codecov.yml
 ├── settings.gradle.kts
 └── README.md
 ```
@@ -1172,6 +1202,7 @@ This project demonstrates Android engineering practices such as:
 - XML/Jetpack Compose interoperability
 - Espresso and Compose UI Test coverage across XML views, Compose components, and their
   interoperability within the same screen, backed by deterministic fakes injected via Hilt
+- JVM unit-test coverage reporting via JaCoCo/Codecov, scoped honestly to what CI actually executes
 - repository-wide code-style enforcement
 - static-analysis rule governance
 - zero-baseline static analysis

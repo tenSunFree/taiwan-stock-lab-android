@@ -117,6 +117,19 @@ jobs:
       - name: Run JVM unit tests
         run: ./gradlew test
 
+      - name: Generate unit test coverage
+        run: ./gradlew :feature:stocklist:createDebugUnitTestCoverageReport
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: feature/stocklist/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: unit-tests
+          fail_ci_if_error: false
+          verbose: true
+
       - name: Android Lint
         run: ./gradlew lint
 
