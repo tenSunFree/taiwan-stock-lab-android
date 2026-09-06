@@ -521,7 +521,7 @@ existing XML color resources (`stock_price_up`/`stock_price_down`) so Compose an
 stock-market color convention instead of diverging into two separate palettes. The four underlying
 `Color` constants that back these properties are `internal` rather than `private`, so a JVM unit
 test in the same module (`StockLabColorsTest`) can assert they stay in sync with
-`colors.xml`/`colors.xml` (night) without needing a Composable/Android-runtime context.
+`values/colors.xml` and `values-night/colors.xml` without needing a Composable/Android-runtime context.
 
 `MarketSummaryBar` also exposes a `MarketSummaryBarTestTags` object (`ROOT`, `ADVANCING`,
 `DECLINING`, `UNCHANGED`) and applies `Modifier.testTag(...)` plus
@@ -855,8 +855,8 @@ builds a `Retrofit` instance pointed at the real TWSE OpenAPI base URL and that 
 service proxy constructs successfully — Dagger's `@Module`/`@InstallIn` annotations don't require
 a Dagger/Hilt runtime to call the plain functions they annotate. `NetworkClientFactoryTest`
 (`:core:network`) verifies `createRetrofit()` wires up the given base URL and registers a Moshi
-converter factory. `StockLabColorsTest` (`:core:ui`) parses `colors.xml`/`colors.xml` (night) with
-a plain JVM XML parser and asserts the hex values match the corresponding Compose `Color` constants
+converter factory. `StockLabColorsTest` (`:core:ui`) parses `values/colors.xml` and
+`values-night/colors.xml` with a plain JVM XML parser and asserts the hex values match the corresponding Compose `Color` constants
 (via `toArgb()`, which is pure Kotlin math and doesn't touch `android.graphics`) — guarding the
 invariant that XML and Compose colors are documented to share.
 
