@@ -32,6 +32,7 @@ android {
     }
     buildTypes {
         debug {
+            enableUnitTestCoverage = true
             // Keep local development crashes out of production Crashlytics metrics. Read by the
             // firebase_crashlytics_collection_enabled meta-data in AndroidManifest.xml; unused
             // when Firebase isn't configured at all.

@@ -117,16 +117,62 @@ jobs:
       - name: Run JVM unit tests
         run: ./gradlew test
 
-      - name: Generate unit test coverage
-        run: ./gradlew :feature:stocklist:createDebugUnitTestCoverageReport
+      - name: Generate unit test coverage (all modules)
+        run: >
+          ./gradlew
+          :app:createDebugUnitTestCoverageReport
+          :core:network:createDebugUnitTestCoverageReport
+          :core:ui:createDebugUnitTestCoverageReport
+          :core:common:jacocoTestReport
+          :feature:stocklist:createDebugUnitTestCoverageReport
 
-      - name: Upload coverage to Codecov
+      - name: Upload app coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: app/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: app
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload core:network coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: core/network/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: core-network
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload core:ui coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: core/ui/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: core-ui
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload core:common coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: core/common/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          disable_search: true
+          flags: core-common
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload feature:stocklist coverage to Codecov
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: feature/stocklist/build/reports/coverage/test/debug/report.xml
           disable_search: true
-          flags: unit-tests
+          flags: feature-stocklist
           fail_ci_if_error: false
           verbose: true
 

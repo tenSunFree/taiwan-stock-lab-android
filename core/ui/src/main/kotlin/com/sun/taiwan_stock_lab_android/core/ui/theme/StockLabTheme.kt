@@ -13,10 +13,10 @@ import androidx.compose.ui.unit.sp
 
 // Mirrors core/ui/src/main/res/values/colors.xml so Compose and XML share
 // the same stock-market color convention (rise = red, fall = green).
-private val StockPriceUpLight = Color(0xFFD32F2F)
-private val StockPriceDownLight = Color(0xFF2E7D32)
-private val StockPriceUpDark = Color(0xFFEF5350)
-private val StockPriceDownDark = Color(0xFF66BB6A)
+internal val StockPriceUpLight = Color(0xFFD32F2F)
+internal val StockPriceDownLight = Color(0xFF2E7D32)
+internal val StockPriceUpDark = Color(0xFFEF5350)
+internal val StockPriceDownDark = Color(0xFF66BB6A)
 
 object StockLabColors {
     val priceUp: Color
