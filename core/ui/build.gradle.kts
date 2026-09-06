@@ -9,6 +9,11 @@ android {
     defaultConfig {
         minSdk = 24
     }
+    buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -24,4 +29,5 @@ dependencies {
     api(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.compose.ui.tooling.preview)
+    testImplementation(libs.junit)
 }

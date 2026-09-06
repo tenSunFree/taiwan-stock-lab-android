@@ -518,7 +518,10 @@ ViewModel directly, keeping the Compose component decoupled from business logic.
 `StockLabTheme` (in `:core:ui`) defines an explicit `ColorScheme` and `Typography` rather than
 relying on Material 3's unconfigured defaults, and `StockLabColors.priceUp`/`priceDown` mirror the
 existing XML color resources (`stock_price_up`/`stock_price_down`) so Compose and XML share the same
-stock-market color convention instead of diverging into two separate palettes.
+stock-market color convention instead of diverging into two separate palettes. The four underlying
+`Color` constants that back these properties are `internal` rather than `private`, so a JVM unit
+test in the same module (`StockLabColorsTest`) can assert they stay in sync with
+`colors.xml`/`colors.xml` (night) without needing a Composable/Android-runtime context.
 
 `MarketSummaryBar` also exposes a `MarketSummaryBarTestTags` object (`ROOT`, `ADVANCING`,
 `DECLINING`, `UNCHANGED`) and applies `Modifier.testTag(...)` plus
@@ -723,6 +726,10 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - Compose UI Test (`ui-test-junit4`, `ui-test-manifest`) — `createComposeRule()` for isolated
   Compose component tests, `createAndroidComposeRule<MainActivity>()` for mixed XML + Compose
   screen tests
+- Minimal JVM unit tests in `app`, `core:network`, and `core:ui` (`TwseNetworkModuleTest`,
+  `NetworkClientFactoryTest`, `StockLabColorsTest`) targeting the one piece of genuinely
+  JVM-testable production logic each module currently has, added specifically to unblock
+  project-wide Codecov coverage reporting
 
 **CI/CD**
 
@@ -732,9 +739,11 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
     - `secret-scan` — gitleaks against the full commit history
 - ktlint reports (plain text + Checkstyle XML), detekt reports (HTML + SARIF), and test/lint
   reports are uploaded as workflow artifacts (7-day retention) when produced
-- JVM unit-test coverage for `:feature:stocklist` is generated via the Android Gradle Plugin's
-  `enableUnitTestCoverage` (JaCoCo under the hood) and uploaded to
-  [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) on every push/PR
+- JVM unit-test coverage is generated across all five modules — the Android modules (`app`,
+  `core:network`, `core:ui`, `feature:stocklist`) via the Android Gradle Plugin's
+  `enableUnitTestCoverage`, `core:common` via the Gradle `jacoco` plugin — and uploaded to
+  [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) as five separately-flagged
+  reports (`app`, `core-common`, `core-network`, `core-ui`, `feature-stocklist`) on every push/PR
 
 ---
 
@@ -747,17 +756,26 @@ src/test/          JVM unit tests
 src/androidTest/   Android runtime / integration tests
 ```
 
-**Code Coverage** — JVM unit-test coverage is generated for `:feature:stocklist` via the Android
-Gradle Plugin's `enableUnitTestCoverage` (`createDebugUnitTestCoverageReport`, JaCoCo under the
-hood) and uploaded to [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) on CI.
-It's currently the only module with a `src/test` suite — `app`, `core:common`, `core:network`, and
-`core:ui` have no JVM tests yet, so they aren't included. This coverage also does not include any
+**Code Coverage** — JVM unit-test coverage is generated across all five modules (`app`,
+`core:common`, `core:network`, `core:ui`, `feature:stocklist`) — the Android modules via the
+Android Gradle Plugin's `enableUnitTestCoverage` (`createDebugUnitTestCoverageReport`, JaCoCo
+under the hood), `core:common` via the Gradle `jacoco` plugin's `jacocoTestReport` — and uploaded
+to [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) as five separately-flagged
+reports (`app`, `core-common`, `core-network`, `core-ui`, `feature-stocklist`), which Codecov
+combines into one project-wide total. `app`, `core:network`, and `core:ui` each have exactly one
+deliberately narrow unit test (`TwseNetworkModuleTest`, `NetworkClientFactoryTest`,
+`StockLabColorsTest`) targeting one piece of genuinely JVM-testable logic — the rest of their
+production code (`MainActivity`, Hilt DI wiring, `@Composable` functions) needs Robolectric or
+instrumentation to test meaningfully, so their reported coverage stays low until that's added.
+`core:common` currently has no tests at all and reports 0% — Gradle's built-in `jacoco` plugin,
+unlike AGP's, doesn't hard-fail on empty execution data, so it still contributes an honest 0% to
+the total rather than being silently excluded. This coverage also does not include any
 `src/androidTest` tests (`StockDaoTest`, `StockDatabaseMigrationTest`, `MarketSummaryBarTest`,
 `StockListEspressoTest`, `StockListMixedComposeEspressoTest`) — those are instrumentation tests
 that CI currently only compiles (`assembleDebugAndroidTest`), not executes on an emulator, so
 their runtime coverage isn't part of the Codecov report. `codecov.yml`'s status checks are
-currently `informational: true` while the reporting baseline gets established, so they surface
-data without blocking merges.
+currently `informational: true` while this project-wide baseline gets established, so they
+surface data without blocking merges.
 
 **Numeric Parsing** — `TwseNumericParserTest` covers null values, empty values, TWSE missing-value
 sentinels, invalid numeric strings, thousands separators, decimal parsing, and integer parsing.
@@ -832,6 +850,16 @@ domain `MarketChangeSummary` to the presentation `MarketSummary`. The advancing/
 coverage for that aggregate — including how a `NULL` `change` column is bucketed — lives in
 `StockDaoTest` (see the **Room DAO** entry above).
 
+**Cross-Module Unit Tests** — `TwseNetworkModuleTest` (`:app`) verifies the production Hilt module
+builds a `Retrofit` instance pointed at the real TWSE OpenAPI base URL and that the resulting
+service proxy constructs successfully — Dagger's `@Module`/`@InstallIn` annotations don't require
+a Dagger/Hilt runtime to call the plain functions they annotate. `NetworkClientFactoryTest`
+(`:core:network`) verifies `createRetrofit()` wires up the given base URL and registers a Moshi
+converter factory. `StockLabColorsTest` (`:core:ui`) parses `colors.xml`/`colors.xml` (night) with
+a plain JVM XML parser and asserts the hex values match the corresponding Compose `Color` constants
+(via `toArgb()`, which is pure Kotlin math and doesn't touch `android.graphics`) — guarding the
+invariant that XML and Compose colors are documented to share.
+
 Notable test names:
 
 ```text
@@ -853,6 +881,9 @@ observeMarketSummary_mapsTheAggregateRowToADomainSummary
 clickingFirstStockCard_opensDetailDialogWithMatchingStock
 marketSummaryBar_displaysMarketCounts
 sortingViaEspresso_reordersRecyclerView_whileComposeSummaryStaysCorrect
+provideTwseRetrofit_pointsAtTheTwseOpenApiBaseUrl
+createRetrofit_registersAMoshiConverterFactory
+lightColorConstants_matchValuesColorsXml
 ```
 
 ---
@@ -865,8 +896,8 @@ Every push to `main` and every pull request triggers a GitHub Actions workflow
 ```text
 static-analysis:  checkout → setup JDK 17 → setup Gradle → ktlintCheck → detekt
 test-build:       checkout → setup JDK 17 → setup Gradle → test →
-                  createDebugUnitTestCoverageReport → upload to Codecov → lint → assembleDebug →
-                  assembleDebugAndroidTest
+                  coverage reports (5 modules) → upload to Codecov (5 flagged uploads) →
+                  lint → assembleDebug → assembleDebugAndroidTest
 secret-scan:      checkout (full history) → gitleaks
 ```
 
@@ -891,7 +922,11 @@ diagnosed directly from the Actions run without reproducing it locally.
 
 Coverage upload to Codecov uses `fail_ci_if_error: false` — a Codecov outage or misconfigured
 token degrades the coverage report/badge but never fails `test-build` itself, since coverage
-reporting is treated as observability rather than a merge gate at this stage.
+reporting is treated as observability rather than a merge gate at this stage. The
+`codecov/codecov-action` step is pinned to an immutable commit SHA (with the human-readable
+version in a trailing comment) rather than a mutable `@v5` tag, since it receives
+`secrets.CODECOV_TOKEN` and a moved tag could otherwise execute unreviewed code with that
+credential.
 
 Instrumented tests (`connectedDebugAndroidTest`) are not *run* in this workflow, since Android
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
@@ -1003,6 +1038,14 @@ Generate JVM unit-test coverage for `:feature:stocklist` (HTML report at
 ./gradlew :feature:stocklist:createDebugUnitTestCoverageReport
 ```
 
+Generate JVM unit-test coverage for every module at once:
+
+```bash
+./gradlew :app:createDebugUnitTestCoverageReport :core:network:createDebugUnitTestCoverageReport \
+  :core:ui:createDebugUnitTestCoverageReport :core:common:jacocoTestReport \
+  :feature:stocklist:createDebugUnitTestCoverageReport
+```
+
 Run Room instrumentation tests, including the schema migration test and the Compose UI test for
 `MarketSummaryBar` (requires a running emulator or physical device):
 
@@ -1074,6 +1117,8 @@ taiwan-stock-lab-android/
 │       │   │       └── strings.xml
 │       │   └── AndroidManifest.xml
 │       ├── test/
+│       │   └── java/com/sun/taiwan_stock_lab_android/di/
+│       │       └── TwseNetworkModuleTest.kt
 │       └── androidTest/
 │           └── java/com/sun/taiwan_stock_lab_android/
 │               ├── HiltTestRunner.kt
@@ -1091,13 +1136,21 @@ taiwan-stock-lab-android/
 ├── core/
 │   ├── common/
 │   ├── network/
+│   │   └── src/
+│   │       ├── main/kotlin/.../core/network/
+│   │       │   └── NetworkClientFactory.kt
+│   │       └── test/kotlin/.../core/network/
+│   │           └── NetworkClientFactoryTest.kt
 │   └── ui/
-│       └── src/main/
-│           ├── kotlin/.../core/ui/theme/
-│           │   └── StockLabTheme.kt
-│           └── res/
-│               ├── values/colors.xml
-│               └── values-night/colors.xml
+│       └── src/
+│           ├── main/
+│           │   ├── kotlin/.../core/ui/theme/
+│           │   │   └── StockLabTheme.kt
+│           │   └── res/
+│           │       ├── values/colors.xml
+│           │       └── values-night/colors.xml
+│           └── test/kotlin/.../core/ui/theme/
+│               └── StockLabColorsTest.kt
 │
 ├── feature/
 │   └── stocklist/
@@ -1202,7 +1255,8 @@ This project demonstrates Android engineering practices such as:
 - XML/Jetpack Compose interoperability
 - Espresso and Compose UI Test coverage across XML views, Compose components, and their
   interoperability within the same screen, backed by deterministic fakes injected via Hilt
-- JVM unit-test coverage reporting via JaCoCo/Codecov, scoped honestly to what CI actually executes
+- project-wide JVM unit-test coverage reporting via JaCoCo/Codecov with per-module flags, scoped
+  honestly to what CI actually executes (JVM tests only, not instrumented tests)
 - repository-wide code-style enforcement
 - static-analysis rule governance
 - zero-baseline static analysis
