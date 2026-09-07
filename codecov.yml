@@ -46,3 +46,27 @@ ignore:
   - "**/build/**"
   - "**/src/test/**"
   - "**/src/androidTest/**"
+  # Room's generated DAO/Database implementations. Only StockDaoTest and
+  # StockDatabaseMigrationTest (androidTest) actually exercise these, and androidTest
+  # isn't run on an emulator in CI, so this code can never show real coverage here.
+  - "**/*_Impl.kt"
+  - "**/*_Impl.java"
+  # ViewBinding generated classes — require inflating a real View (Robolectric/instrumentation)
+  # to exercise; there's no business logic in them to test.
+  - "**/databinding/**"
+  - "**/*Binding.kt"
+  - "**/*Binding.java"
+  # Hilt/Dagger annotation-processor output — pure DI wiring, no business logic.
+  - "**/hilt_aggregated_deps/**"
+  - "**/Hilt_*.kt"
+  - "**/Hilt_*.java"
+  - "**/*_Factory.kt"
+  - "**/*_Factory.java"
+  - "**/*_MembersInjector.kt"
+  - "**/*_MembersInjector.java"
+  - "**/*_HiltComponents.kt"
+  - "**/*_HiltComponents.java"
+  - "**/*_HiltModules*.kt"
+  - "**/*_HiltModules*.java"
+  # NOTE: Moshi's generated *JsonAdapter classes are intentionally NOT ignored here —
+  # DtoJsonAdapterTest exercises them directly with real JSON, so they should count.
