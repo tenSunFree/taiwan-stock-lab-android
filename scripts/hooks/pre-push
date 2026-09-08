@@ -6,14 +6,16 @@
 #   - detekt
 #   - JVM unit tests
 #   - JaCoCo unit-test coverage reports for all 5 modules (same tasks test-build runs, so a
-#     module-level report-generation failure — e.g. a broken codecov.yml exclusion pattern that
-#     also affects a local build — surfaces here instead of only on CI)
+#     genuine module-level report-generation regression — e.g. a build.gradle.kts change that
+#     breaks a module's JaCoCo setup — surfaces here instead of only on CI)
 #   - Android Lint
 #   - debug build
 #   - androidTest compilation (catches production API drift breaking src/androidTest — see
 #     StockDaoTest's dao.observeAll() incident; `./gradlew test` never compiles this source set)
-#   - codecov.yml validation against Codecov's public validate endpoint (best-effort only —
-#     network-dependent, so it warns rather than blocks if it can't run)
+#   - codecov.yml validation against Codecov's public validate endpoint — a separate, unrelated
+#     check: it validates the YAML schema Codecov's servers use when processing an uploaded
+#     report, not an input to the Gradle JaCoCo tasks above (best-effort only, network-dependent,
+#     so it warns rather than blocks if it can't run)
 #
 # connectedDebugAndroidTest is intentionally NOT included — it requires a running emulator or
 # physical device, so it stays an explicit manual step:
@@ -22,12 +24,12 @@
 #
 # NOTE: :app:createDebugUnitTestCoverageReport has been observed failing on CI with
 # "Unable to generate Jacoco report" (AGP's JacocoReportTask), while :core:network and :core:ui —
-# structurally similar modules running the exact same task type — succeed in the same run. This
-# is NOT a stale-cache artifact (the failing CI run built its task graph from scratch); the root
-# cause is still unconfirmed pending a --stacktrace rerun. This hook runs the same task locally
-# so a local failure here is a real, reproducible signal — but a local pass does not guarantee
-# the CI run will also pass, since the failure so far has only reproduced on the GitHub Actions
-# runner, not on a local machine.
+# structurally similar modules running the exact same task type — succeed in the same run. A
+# subsequent CI run on unrelated code passed cleanly, so this looks like a transient CI-runner
+# flake rather than a reproducible defect; it has not recurred since. This hook runs the same
+# task locally so a local failure here is still a real, reproducible signal worth investigating,
+# but a local pass does not guarantee every CI run will also pass, since the one occurrence so
+# far was runner-specific and never reproduced locally.
 
 set -e
 
