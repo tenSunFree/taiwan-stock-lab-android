@@ -5,25 +5,60 @@
 #   - ktlintCheck
 #   - detekt
 #   - JVM unit tests
+#   - JaCoCo unit-test coverage reports for all 5 modules (same tasks test-build runs, so a
+#     module-level report-generation failure — e.g. a broken codecov.yml exclusion pattern that
+#     also affects a local build — surfaces here instead of only on CI)
 #   - Android Lint
 #   - debug build
 #   - androidTest compilation (catches production API drift breaking src/androidTest — see
 #     StockDaoTest's dao.observeAll() incident; `./gradlew test` never compiles this source set)
+#   - codecov.yml validation against Codecov's public validate endpoint (best-effort only —
+#     network-dependent, so it warns rather than blocks if it can't run)
 #
 # connectedDebugAndroidTest is intentionally NOT included — it requires a running emulator or
 # physical device, so it stays an explicit manual step:
 #
 #   ./gradlew :feature:stocklist:connectedDebugAndroidTest
+#
+# NOTE: :app:createDebugUnitTestCoverageReport has been observed failing on CI with
+# "Unable to generate Jacoco report" (AGP's JacocoReportTask), while :core:network and :core:ui —
+# structurally similar modules running the exact same task type — succeed in the same run. This
+# is NOT a stale-cache artifact (the failing CI run built its task graph from scratch); the root
+# cause is still unconfirmed pending a --stacktrace rerun. This hook runs the same task locally
+# so a local failure here is a real, reproducible signal — but a local pass does not guarantee
+# the CI run will also pass, since the failure so far has only reproduced on the GitHub Actions
+# runner, not on a local machine.
+
 set -e
 
 echo "[pre-push] Running local CI gate..."
+
 ./gradlew \
     ktlintCheck \
     detekt \
     test \
+    :app:createDebugUnitTestCoverageReport \
+    :core:network:createDebugUnitTestCoverageReport \
+    :core:ui:createDebugUnitTestCoverageReport \
+    :core:common:jacocoTestReport \
+    :feature:stocklist:createDebugUnitTestCoverageReport \
     lint \
     assembleDebug \
     :feature:stocklist:assembleDebugAndroidTest \
     :app:assembleDebugAndroidTest
+
+if [ -f codecov.yml ]; then
+    if command -v curl >/dev/null 2>&1; then
+        echo "[pre-push] Validating codecov.yml against Codecov's validate endpoint..."
+        if ! curl --silent --fail --max-time 10 --data-binary @codecov.yml \
+            https://codecov.io/validate >/dev/null 2>&1; then
+            echo "[pre-push] WARNING: codecov.yml did not pass Codecov's validation check (or" \
+                 "the endpoint was unreachable). This does not block the push, but review the" \
+                 "file — Codecov silently ignores a malformed config rather than failing CI."
+        fi
+    else
+        echo "[pre-push] Skipping codecov.yml validation (curl not found)."
+    fi
+fi
 
 echo "[pre-push] All checks passed."
