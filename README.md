@@ -726,10 +726,14 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - Compose UI Test (`ui-test-junit4`, `ui-test-manifest`) — `createComposeRule()` for isolated
   Compose component tests, `createAndroidComposeRule<MainActivity>()` for mixed XML + Compose
   screen tests
-- Minimal JVM unit tests in `app`, `core:network`, and `core:ui` (`TwseNetworkModuleTest`,
-  `NetworkClientFactoryTest`, `StockLabColorsTest`) targeting the one piece of genuinely
-  JVM-testable production logic each module currently has, added specifically to unblock
-  project-wide Codecov coverage reporting
+- Minimal JVM unit tests in `app`, `core:common`, `core:network`, and `core:ui`
+  (`TwseNetworkModuleTest`, `DefaultDispatchersProviderTest`, `NetworkClientFactoryTest`,
+  `StockLabColorsTest`) targeting the one piece of genuinely JVM-testable production logic each
+  module currently has, added specifically to unblock project-wide Codecov coverage reporting
+- `codecov.yml` explicitly ignores annotation-processor-generated code (Room's `*_Impl`, Hilt's
+  DI wiring, ViewBinding classes) that only an Android runtime can exercise, so the reported
+  percentage reflects hand-written production logic rather than being deflated by code that was
+  never realistically coverable by a JVM unit test in the first place
 
 **CI/CD**
 
@@ -767,15 +771,22 @@ deliberately narrow unit test (`TwseNetworkModuleTest`, `NetworkClientFactoryTes
 `StockLabColorsTest`) targeting one piece of genuinely JVM-testable logic — the rest of their
 production code (`MainActivity`, Hilt DI wiring, `@Composable` functions) needs Robolectric or
 instrumentation to test meaningfully, so their reported coverage stays low until that's added.
-`core:common` currently has no tests at all and reports 0% — Gradle's built-in `jacoco` plugin,
-unlike AGP's, doesn't hard-fail on empty execution data, so it still contributes an honest 0% to
-the total rather than being silently excluded. This coverage also does not include any
-`src/androidTest` tests (`StockDaoTest`, `StockDatabaseMigrationTest`, `MarketSummaryBarTest`,
-`StockListEspressoTest`, `StockListMixedComposeEspressoTest`) — those are instrumentation tests
-that CI currently only compiles (`assembleDebugAndroidTest`), not executes on an emulator, so
-their runtime coverage isn't part of the Codecov report. `codecov.yml`'s status checks are
-currently `informational: true` while this project-wide baseline gets established, so they
-surface data without blocking merges.
+`core:common` now has `DefaultDispatchersProviderTest`, covering the one class it currently
+contains. This coverage also does not include any `src/androidTest` tests (`StockDaoTest`,
+`StockDatabaseMigrationTest`, `MarketSummaryBarTest`, `StockListEspressoTest`,
+`StockListMixedComposeEspressoTest`) — those are instrumentation tests that CI currently only
+compiles (`assembleDebugAndroidTest`), not executes on an emulator, so their runtime coverage
+isn't part of the Codecov report. `codecov.yml`'s status checks are currently `informational:
+true` while this project-wide baseline gets established, so they surface data without blocking
+merges.
+
+Because Room, Hilt, and ViewBinding's annotation-processor output (`*_Impl`, `Hilt_*`,
+`*_Factory`, `databinding/**`, etc.) compiles into `feature:stocklist`'s main source set but can
+only be exercised by an actual Android runtime — never by a plain JVM unit test — `codecov.yml`
+explicitly `ignore`s those generated-file patterns so they don't silently deflate the reported
+percentage for code that was never realistically coverable here in the first place. Moshi's
+generated `*JsonAdapter` classes are the one exception left un-ignored: `DtoJsonAdapterTest`
+exercises them directly against real JSON, so their coverage is genuine and counts.
 
 **Numeric Parsing** — `TwseNumericParserTest` covers null values, empty values, TWSE missing-value
 sentinels, invalid numeric strings, thousands separators, decimal parsing, and integer parsing.
@@ -792,6 +803,30 @@ to domain stocks (`observeStocksPaged`, via `androidx.paging.testing.asSnapshot(
 stock lookup (`getStock`, found/not-found), mapping the market-summary aggregate row to a domain
 `MarketChangeSummary`, reading the last-refreshed timestamp, successful remote refresh, preserving
 cache after network failure/empty snapshot, and propagating `CancellationException`.
+
+**Local Data Source** — `StockLocalDataSourceTest` exercises `StockLocalDataSource` directly
+against a mocked `StockDao` — ascending/descending sort direction selecting the correct DAO
+query (via `asSnapshot()`), single-row lookup found/not-found, the market-summary flow,
+last-refreshed timestamp mapping (present and absent), and `replaceAll` delegation. This class is
+mocked away entirely in `OfflineFirstStockRepositoryTest`, so its own Pager-wiring and
+direction-selection logic had no coverage until this test was added.
+
+**Entity Mapping** — `StockEntityMapperTest` covers `StockEntity.toDomain()` /
+`Stock.toEntity()` field-by-field, including invalid/empty numeric strings collapsing to `null`
+on the read path and `BigDecimal.toPlainString()` avoiding scientific notation on the write path
+(e.g. `1E+3` → `"1000"`).
+
+**DAO Transaction Ordering** — `StockDaoReplaceAllTest` targets `StockDao.replaceAll` specifically
+because it's a Kotlin interface method with a real body (`@Transaction` clear → insert → stamp
+timestamp), not a Room-generated query — Room's actual generated implementation is only exercised
+by `StockDaoTest` (androidTest). A fake `StockDao` implementation lets a plain JUnit test verify
+the ordering invariant this method exists to guarantee, independent of a real database.
+
+**Generated JSON Parsing** — `DtoJsonAdapterTest` drives `StockDayDto`, `StockDayAverageDto`, and
+`StockValuationDto` through a real `Moshi` instance (`@JsonClass(generateAdapter = true)`'s KSP
+output), covering field-name mapping, missing-field defaults, and list deserialization — the only
+Moshi-generated adapter code intentionally left un-ignored in `codecov.yml` (see Code Coverage
+above).
 
 **Room DAO** — `StockDaoTest` is an Android instrumentation test using a real in-memory Room
 database with `BundledSQLiteDriver`, covering transactional stock+refresh-metadata replacement
@@ -858,7 +893,9 @@ a Dagger/Hilt runtime to call the plain functions they annotate. `NetworkClientF
 converter factory. `StockLabColorsTest` (`:core:ui`) parses `values/colors.xml` and
 `values-night/colors.xml` with a plain JVM XML parser and asserts the hex values match the corresponding Compose `Color` constants
 (via `toArgb()`, which is pure Kotlin math and doesn't touch `android.graphics`) — guarding the
-invariant that XML and Compose colors are documented to share.
+invariant that XML and Compose colors are documented to share. `DefaultDispatchersProviderTest`
+(`:core:common`) asserts each `DispatchersProvider` property is the same instance
+(`assertSame`) as its corresponding `kotlinx.coroutines.Dispatchers` singleton.
 
 Notable test names:
 
@@ -884,6 +921,11 @@ sortingViaEspresso_reordersRecyclerView_whileComposeSummaryStaysCorrect
 provideTwseRetrofit_pointsAtTheTwseOpenApiBaseUrl
 createRetrofit_registersAMoshiConverterFactory
 lightColorConstants_matchValuesColorsXml
+replaceAll_clearsOldStocksInsertsNewStocksThenUpdatesMetadataInOrder
+observeStocksPaged_withAscendingDirection_usesAscendingDAOQuery
+toEntity_usesPlainStringRepresentationForBigDecimal
+stockDayDtoAdapter_mapsEveryTwseFieldByItsJsonName
+mainReturnsDispatchersMain
 ```
 
 ---
@@ -1135,6 +1177,12 @@ taiwan-stock-lab-android/
 │
 ├── core/
 │   ├── common/
+│   │   └── src/
+│   │       ├── main/kotlin/.../core/common/coroutine/
+│   │       │   ├── DispatchersProvider.kt
+│   │       │   └── DefaultDispatchersProvider.kt
+│   │       └── test/kotlin/.../core/common/coroutine/
+│   │           └── DefaultDispatchersProviderTest.kt
 │   ├── network/
 │   │   └── src/
 │   │       ├── main/kotlin/.../core/network/
@@ -1192,7 +1240,20 @@ taiwan-stock-lab-android/
 │           │       ├── drawable/bg_bottom_sheet_handle.xml
 │           │       └── values/strings.xml
 │           │
-│           ├── test/kotlin/
+│           ├── test/kotlin/.../feature/stocklist/
+│           │   ├── data/
+│           │   │   ├── local/
+│           │   │   │   ├── StockLocalDataSourceTest.kt
+│           │   │   │   └── dao/
+│           │   │   │       └── StockDaoReplaceAllTest.kt
+│           │   │   ├── mapper/
+│           │   │   │   └── StockEntityMapperTest.kt
+│           │   │   └── remote/
+│           │   │       └── dto/
+│           │   │           └── DtoJsonAdapterTest.kt
+│           │   └── presentation/
+│           │       └── model/
+│           │           └── MarketSummaryTest.kt
 │           └── androidTest/
 │               └── kotlin/.../
 │                   ├── data/local/
@@ -1256,7 +1317,9 @@ This project demonstrates Android engineering practices such as:
 - Espresso and Compose UI Test coverage across XML views, Compose components, and their
   interoperability within the same screen, backed by deterministic fakes injected via Hilt
 - project-wide JVM unit-test coverage reporting via JaCoCo/Codecov with per-module flags, scoped
-  honestly to what CI actually executes (JVM tests only, not instrumented tests)
+  honestly to what CI actually executes (JVM tests only, not instrumented tests), with generated
+  annotation-processor code explicitly excluded from the reported percentage via `codecov.yml`
+  rather than left to silently deflate it
 - repository-wide code-style enforcement
 - static-analysis rule governance
 - zero-baseline static analysis
