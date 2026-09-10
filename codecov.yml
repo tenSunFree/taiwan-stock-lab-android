@@ -9,16 +9,16 @@ coverage:
   status:
     project:
       default:
-        target: auto
-        threshold: 1%
-        informational: true
+        target: auto      # Compare against the baseline commit, rather than hardcoding 70%.
+        threshold: 1%      # Minor fluctuations allowed
+        informational: false   # A PR that actually prevents regression
 
     patch:
       default:
         target: 70%
         threshold: 0%
         only_pulls: true
-        informational: true
+        informational: false   # Aim for ≥70% starting now
 
 flags:
   app:
@@ -70,3 +70,8 @@ ignore:
   - "**/*_HiltModules*.java"
   # NOTE: Moshi's generated *JsonAdapter classes are intentionally NOT ignored here —
   # DtoJsonAdapterTest exercises them directly with real JSON, so they should count.
+  # Hilt application entry point; contains no handwritten logic.
+  - "app/src/main/java/**/TaiwanStockApplication.kt"
+  # Note: MainActivity is not excluded; it contains actual UI state collection and error
+  # handling logic. Tests for it will be added later using Robolectric rather than
+  # excluding it.
