@@ -115,16 +115,21 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run JVM unit tests
+        # Runs testDebugUnitTest AND testReleaseUnitTest for every module, so the full
+        # test-reports artifact below covers both variants — not just the debug coverage
+        # task's own dependency on testDebugUnitTest.
         run: ./gradlew test
 
-      - name: Generate unit test coverage (all modules)
-        run: >
-          ./gradlew
-          :app:createDebugUnitTestCoverageReport
-          :core:network:createDebugUnitTestCoverageReport
-          :core:ui:createDebugUnitTestCoverageReport
-          :core:common:jacocoTestReport
-          :feature:stocklist:createDebugUnitTestCoverageReport
+      - name: Generate project coverage dashboard
+        # aggregateCoverageReport (root build.gradle.kts) dependsOn all 5 module-level
+        # coverage tasks below, so this single call regenerates every module's
+        # report.xml/jacocoTestReport.xml AND the merged local dashboard in one go:
+        #   :app:createDebugUnitTestCoverageReport
+        #   :core:network:createDebugUnitTestCoverageReport
+        #   :core:ui:createDebugUnitTestCoverageReport
+        #   :core:common:jacocoTestReport
+        #   :feature:stocklist:createDebugUnitTestCoverageReport
+        run: ./gradlew aggregateCoverageReport
 
       - name: Upload app coverage to Codecov
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
@@ -175,6 +180,18 @@ jobs:
           flags: feature-stocklist
           fail_ci_if_error: false
           verbose: true
+
+      - name: Upload aggregated coverage dashboard
+        # Local raw JaCoCo dashboard (build/reports/coverage-aggregate/index.html) — a
+        # single-file-to-download overview across all 5 modules. NOT the same number as
+        # Codecov's project percentage above; see the notice on the dashboard page itself.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-dashboard
+          path: build/reports/coverage-aggregate/
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Android Lint
         run: ./gradlew lint
