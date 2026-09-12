@@ -299,6 +299,14 @@ tasks.register("aggregateCoverageReport") {
 
         logger.lifecycle("Coverage dashboard: ${output.resolve("index.html")}")
         logger.lifecycle("Raw project line coverage: ${pct(totalLines.percentage)} (need $linesNeededFor70 more lines for 70%)")
+        logger.lifecycle("--- per-module breakdown (line coverage) ---")
+        results.forEach { r ->
+            if (r.available) {
+                logger.lifecycle("  ${r.name}: ${pct(r.line.percentage)} (${r.line.covered}/${r.line.total})")
+            } else {
+                logger.lifecycle("  ${r.name}: MISSING")
+            }
+        }
 
         val missingModules = results.filterNot { it.available }.map { it.name }
         if (missingModules.isNotEmpty()) {
