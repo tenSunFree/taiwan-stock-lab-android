@@ -66,28 +66,6 @@ tasks.register("installGitHooks") {
     }
 }
 
-data class CoverageModule(val name: String, val xmlFile: File, val htmlDirectory: File)
-
-data class Counts(val missed: Long = 0, val covered: Long = 0) {
-    val total: Long get() = missed + covered
-    val percentage: Double get() = if (total == 0L) 0.0 else covered * 100.0 / total
-
-    /** How many more lines/branches must flip from missed→covered to reach [targetPercent] (0..100). */
-    fun neededFor(targetPercent: Double): Long {
-        if (total == 0L) return 0
-        val required = kotlin.math.ceil(total * (targetPercent / 100.0) - covered).toLong()
-        return required.coerceAtLeast(0)
-    }
-}
-
-data class ModuleResult(
-    val name: String,
-    val line: Counts,
-    val branch: Counts,
-    val instruction: Counts,
-    val available: Boolean,
-)
-
 // ---------------------------------------------------------------------------
 // Project JVM coverage dashboard
 //
@@ -101,13 +79,44 @@ data class ModuleResult(
 // this script does not know about. Use this dashboard to find low-coverage
 // hotspots locally and to sanity-check trends between runs — treat Codecov's
 // number on the PR check as the source of truth for the "official" 70% goal.
+//
+// NOTE ON STRUCTURE: CoverageModule/Counts/ModuleResult are declared here, at
+// the top level of the script, rather than as local classes inside doLast.
+// Local data classes nested inside doLast (itself an anonymous Action)
+// combined with lambda captures (sumOf/filterNot/map, etc.) crash the Kotlin
+// script compiler bundled with Gradle 9.x with an internal "Exception while
+// generating code for: FUN name:execute" error. Keeping them top-level avoids
+// that nesting entirely.
 // ---------------------------------------------------------------------------
+private data class CoverageModule(val name: String, val xmlFile: File, val htmlDirectory: File)
+
+private data class Counts(val missed: Long = 0, val covered: Long = 0) {
+    val total: Long get() = missed + covered
+    val percentage: Double get() = if (total == 0L) 0.0 else covered * 100.0 / total
+
+    /** How many more lines/branches must flip from missed→covered to reach [targetPercent] (0..100). */
+    fun neededFor(targetPercent: Double): Long {
+        if (total == 0L) return 0
+        val required = kotlin.math.ceil(total * (targetPercent / 100.0) - covered).toLong()
+        return required.coerceAtLeast(0)
+    }
+}
+
+private data class ModuleResult(
+    val name: String,
+    val line: Counts,
+    val branch: Counts,
+    val instruction: Counts,
+    val available: Boolean,
+)
+
 tasks.register("aggregateCoverageReport") {
     group = "verification"
-    description = "..."
+    description = "Generates a project-wide JVM coverage dashboard (raw JaCoCo aggregate, not the Codecov number)."
     notCompatibleWithConfigurationCache(
-        "The data types used by the aggregate report cannot be safely serialized into the Configuration Cache; this task does not need to be cached in the first place."
+        "The data types used by the aggregate report cannot be safely serialized into the Configuration Cache; this task does not need to be cached in the first place.",
     )
+
     dependsOn(
         ":app:createDebugUnitTestCoverageReport",
         ":core:network:createDebugUnitTestCoverageReport",
@@ -115,6 +124,7 @@ tasks.register("aggregateCoverageReport") {
         ":core:common:jacocoTestReport",
         ":feature:stocklist:createDebugUnitTestCoverageReport",
     )
+
     val modules = listOf(
         CoverageModule(
             "app",
@@ -133,8 +143,8 @@ tasks.register("aggregateCoverageReport") {
         ),
         CoverageModule(
             "core-common",
-            file("core/common/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml"),
-            file("core/common/build/reports/jacoco/jacocoTestReport/html"),
+            file("core/common/build/reports/jacoco/test/jacocoTestReport.xml"),
+            file("core/common/build/reports/jacoco/test/html"),
         ),
         CoverageModule(
             "feature-stocklist",
@@ -142,11 +152,14 @@ tasks.register("aggregateCoverageReport") {
             file("feature/stocklist/build/reports/coverage/test/debug"),
         ),
     )
+
     val outputDirectory = layout.buildDirectory.dir("reports/coverage-aggregate")
+
     doLast {
         val output = outputDirectory.get().asFile
         output.deleteRecursively()
         output.mkdirs()
+
         val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply {
             isValidating = false
             setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
@@ -154,6 +167,7 @@ tasks.register("aggregateCoverageReport") {
         val builder = factory.newDocumentBuilder()
         // report.xml references report.dtd; we don't need to actually fetch it offline.
         builder.setEntityResolver { _, _ -> org.xml.sax.InputSource(java.io.StringReader("")) }
+
         fun readCounters(xmlFile: File): Triple<Counts, Counts, Counts> {
             val document = builder.parse(xmlFile)
             var lines = Counts()
@@ -181,7 +195,12 @@ tasks.register("aggregateCoverageReport") {
 
         val results = modules.map { module ->
             if (!module.xmlFile.exists()) {
-                logger.warn("Coverage XML missing for ${module.name}: ${module.xmlFile.path}")
+                // Do NOT silently treat a missing module as Counts(0, 0) and fold it into the
+                // aggregate — total=0 means it contributes nothing to either side of the
+                // fraction, which SHRINKS the denominator instead of penalizing the missing
+                // module. That can make the dashboard report an inflated "reached 70%" while
+                // most of the project's coverage data is actually absent. Fail loudly instead.
+                logger.error("Coverage XML missing for ${module.name}: ${module.xmlFile.path}")
                 ModuleResult(module.name, Counts(), Counts(), Counts(), available = false)
             } else {
                 val (line, branch, instruction) = readCounters(module.xmlFile)
@@ -204,6 +223,7 @@ tasks.register("aggregateCoverageReport") {
         val totalBranches = aggregate { it.branch }
         val totalInstructions = aggregate { it.instruction }
         val linesNeededFor70 = totalLines.neededFor(70.0)
+
         fun pct(v: Double) = String.format(java.util.Locale.US, "%.2f%%", v)
         fun statusClass(v: Double) = when {
             v >= 70.0 -> "good"
@@ -226,6 +246,7 @@ tasks.register("aggregateCoverageReport") {
                 """.trimIndent()
             }
         }
+
         output.resolve("index.html").writeText(
             """
             <!DOCTYPE html>
@@ -275,7 +296,21 @@ tasks.register("aggregateCoverageReport") {
             </html>
             """.trimIndent(),
         )
+
         logger.lifecycle("Coverage dashboard: ${output.resolve("index.html")}")
         logger.lifecycle("Raw project line coverage: ${pct(totalLines.percentage)} (need $linesNeededFor70 more lines for 70%)")
+
+        val missingModules = results.filterNot { it.available }.map { it.name }
+        if (missingModules.isNotEmpty()) {
+            // The dashboard HTML above is still written (useful for local debugging), but the
+            // task itself must fail so CI surfaces this instead of silently reporting a number
+            // computed from a subset of the project.
+            throw GradleException(
+                "aggregateCoverageReport: missing coverage XML for: ${missingModules.joinToString(", ")}. " +
+                    "The reported ${pct(totalLines.percentage)} does NOT reflect the whole project " +
+                    "and must not be treated as the real project coverage. Check why the listed " +
+                    "module(s) failed to produce a report.",
+            )
+        }
     }
 }
