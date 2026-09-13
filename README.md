@@ -9,6 +9,7 @@
 [![DI](https://img.shields.io/badge/DI-Hilt-49A84A)](#dependency-injection)
 [![UI](https://img.shields.io/badge/UI-XML%20%2B%20Compose%20Interop-3DDC84?logo=android&logoColor=white)](#ui)
 [![Testing](https://img.shields.io/badge/Testing-JUnit5%20%2B%20MockK%20%2B%20Espresso%2FCompose-FF9800)](#testing)
+[![Coverage Tooling](https://img.shields.io/badge/Coverage-JaCoCo%20%2B%20Codecov%20%2B%20Local%20Dashboard-4CAF50)](#continuous-integration)
 [![Code Quality](https://img.shields.io/badge/Code%20Quality-ktlint%20%2B%20detekt-blueviolet)](#tech-stack)
 [![Observability](https://img.shields.io/badge/Observability-Crashlytics%20%2B%20LeakCanary-FFCA28?logo=firebase&logoColor=black)](#tech-stack)
 [![Android CI](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml/badge.svg)](https://github.com/tenSunFree/taiwan-stock-lab-android/actions/workflows/ci.yml)
@@ -131,6 +132,9 @@ purposes.
 - Sort-direction changes are a query-level concern (`ORDER BY code ASC`/`DESC`, re-subscribed via
   `flatMapLatest`) rather than an in-memory re-sort, so the paged stream never needs the full
   dataset in memory to reorder it
+- A local, project-wide JVM coverage dashboard (`./gradlew aggregateCoverageReport`) merging all
+  five modules' JaCoCo reports into a single HTML page with a per-module breakdown, for local
+  diagnosis alongside the Codecov report generated in CI
 
 ---
 
@@ -716,6 +720,12 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
 - Turbine
 - `androidx.paging:paging-testing` (`asSnapshot()`, `PagingData.from(list, sourceLoadStates = ...)`
   for testing `Flow<PagingData<T>>` built on a non-completable upstream)
+- Robolectric — used narrowly for `RecyclerViewSanityTest`, a minimal repro documenting a
+  `RecyclerView.Adapter.setStateRestorationPolicy()` `NullPointerException` under Robolectric.
+  `StockListAdapter`/`StockViewHolder` UI behavior itself is covered by an instrumented test
+  instead (`StockViewHolderTest`) rather than by a Robolectric JVM test, once that specific
+  incompatibility was isolated — see the **ViewHolder Binding (Instrumented)** entry under
+  [Testing](#testing) below
 - AndroidJUnit4 / AndroidX Test
 - Room in-memory database tests
 - Room `MigrationTestHelper`
@@ -748,6 +758,13 @@ explicit rationale, or documented as deliberate project-level rule exceptions.
   `enableUnitTestCoverage`, `core:common` via the Gradle `jacoco` plugin — and uploaded to
   [Codecov](https://codecov.io/gh/tenSunFree/taiwan-stock-lab-android) as five separately-flagged
   reports (`app`, `core-common`, `core-network`, `core-ui`, `feature-stocklist`) on every push/PR
+- A root-level `aggregateCoverageReport` Gradle task additionally merges those five modules' raw
+  JaCoCo counters into a single local HTML dashboard
+  (`build/reports/coverage-aggregate/index.html`) with a per-module breakdown, for local
+  diagnosis between CI runs — see [Local Development](#local-development). This is a raw JaCoCo
+  aggregate and intentionally does not apply `codecov.yml`'s `ignore` rules, so it will not exactly
+  match the percentage Codecov reports on a PR check; it fails loudly instead of silently
+  under-reporting if any module's report is missing
 
 ---
 
@@ -774,11 +791,15 @@ instrumentation to test meaningfully, so their reported coverage stays low until
 `core:common` now has `DefaultDispatchersProviderTest`, covering the one class it currently
 contains. This coverage also does not include any `src/androidTest` tests (`StockDaoTest`,
 `StockDatabaseMigrationTest`, `MarketSummaryBarTest`, `StockListEspressoTest`,
-`StockListMixedComposeEspressoTest`) — those are instrumentation tests that CI currently only
-compiles (`assembleDebugAndroidTest`), not executes on an emulator, so their runtime coverage
-isn't part of the Codecov report. `codecov.yml`'s status checks are currently `informational:
-true` while this project-wide baseline gets established, so they surface data without blocking
-merges.
+`StockListMixedComposeEspressoTest`, `StockViewHolderTest`) — those are instrumentation tests that
+CI currently only compiles (`assembleDebugAndroidTest`), not executes on an emulator, so their
+runtime coverage isn't part of the Codecov report. For the same reason, `StockViewHolderTest`'s
+assertions — despite covering real production logic in `StockListAdapter.StockViewHolder` — also
+aren't reflected in `feature:stocklist`'s JVM coverage number, since constructing `StockListAdapter`
+itself throws under Robolectric (see the **ViewHolder Binding (Instrumented)** entry below), so
+that coverage is only available via `connectedDebugAndroidTest`. `codecov.yml`'s status checks are
+currently `informational: true` while this project-wide baseline gets established, so they surface
+data without blocking merges.
 
 Because Room, Hilt, and ViewBinding's annotation-processor output (`*_Impl`, `Hilt_*`,
 `*_Factory`, `databinding/**`, etc.) compiles into `feature:stocklist`'s main source set but can
@@ -852,6 +873,20 @@ sourceLoadStates = ...)` is used with explicit `LoadStates` rather than the no-a
 since `stocksPagingData` is built on a non-completable `MutableStateFlow` upstream — without
 explicit `LoadStates`, `asSnapshot()` has no signal that a page finished loading and hangs.
 
+**ViewHolder Binding (Instrumented)** — `StockViewHolderTest` covers
+`StockListAdapter.StockViewHolder.bind()` directly on a real Android runtime: all 11 card text
+fields, `PricePosition`/`ChangeDirection` color mapping (above/below average,
+positive/negative/zero/unknown), and the click callback firing with the bound stock code. It runs
+as an instrumented test rather than a JVM unit test because constructing `StockListAdapter` itself
+(which extends `PagingDataAdapter` → `RecyclerView.Adapter`) throws a `NullPointerException` under
+Robolectric via `setStateRestorationPolicy()` — `RecyclerViewSanityTest` isolates and documents
+that issue with a minimal repro unrelated to Paging, kept long-term as a reference. Rendering
+`item_stock_card.xml`'s `MaterialCardView` also requires an explicit `ContextThemeWrapper` around a
+Material theme, since it enforces `Theme.MaterialComponents` (or a descendant) at construction
+time regardless of test environment. `StockListAdapter`'s own `onCreateViewHolder`/
+`onBindViewHolder` wiring through the real adapter continues to be covered by
+`StockListEspressoTest`.
+
 **XML Screen (Espresso)** — `StockListEspressoTest` verifies that tapping the first stock card in
 the `RecyclerView` opens `StockDetailDialogFragment` with the matching stock code, using
 `RecyclerViewActions` (`espresso-contrib`) and a custom `BoundedMatcher` (`withRecyclerViewItem`)
@@ -869,11 +904,13 @@ helper polls Espresso assertions via `ComposeTestRule.waitUntil`, bridging the a
 re-query + Paging diff triggered by the sort change — Espresso does not automatically synchronize
 with that kind of application-specific coroutine work.
 
-All three instrumented UI tests run against a `FakeStockRepository` installed via a Hilt
+All instrumented UI tests run against a `FakeStockRepository` installed via a Hilt
 `@TestInstallIn` module (`FakeStockRepositoryModule`, replacing the production
 `StockRepositoryModule`), so they exercise the presentation and Paging/adapter layers
 deterministically without depending on Room or the real TWSE network call — Room itself remains
-covered separately by `StockDaoTest` and `StockDatabaseMigrationTest`.
+covered separately by `StockDaoTest` and `StockDatabaseMigrationTest`. `StockViewHolderTest`
+specifically does not go through `StockListAdapter`/Hilt at all — it constructs
+`StockListAdapter.StockViewHolder` directly (see above).
 
 **UI Formatting Rules** — `StockUiModelMapperTest` covers price-position classification (above/below
 monthly average), change-direction classification (positive/negative), null-value placeholders,
@@ -888,7 +925,10 @@ coverage for that aggregate — including how a `NULL` `change` column is bucket
 **Cross-Module Unit Tests** — `TwseNetworkModuleTest` (`:app`) verifies the production Hilt module
 builds a `Retrofit` instance pointed at the real TWSE OpenAPI base URL and that the resulting
 service proxy constructs successfully — Dagger's `@Module`/`@InstallIn` annotations don't require
-a Dagger/Hilt runtime to call the plain functions they annotate. `NetworkClientFactoryTest`
+a Dagger/Hilt runtime to call the plain functions they annotate. `StockRepositoryModuleTest` and
+`DatabaseModuleTest` (`:app`) cover the remaining `@Provides` wiring in `app/di` — each asserts the
+provider function returns the expected concrete type or delegates correctly, using MockK for its
+dependencies. `NetworkClientFactoryTest`
 (`:core:network`) verifies `createRetrofit()` wires up the given base URL and registers a Moshi
 converter factory. `StockLabColorsTest` (`:core:ui`) parses `values/colors.xml` and
 `values-night/colors.xml` with a plain JVM XML parser and asserts the hex values match the corresponding Compose `Color` constants
@@ -926,6 +966,12 @@ observeStocksPaged_withAscendingDirection_usesAscendingDAOQuery
 toEntity_usesPlainStringRepresentationForBigDecimal
 stockDayDtoAdapter_mapsEveryTwseFieldByItsJsonName
 mainReturnsDispatchersMain
+bind_populatesAllCardTextFieldsFromModel
+bind_aboveAveragePosition_colorsClosingPriceUp
+clickingCard_invokesCallbackWithBoundStockCode
+canConstructPlainAdapter
+provideTwseRemoteDataSource_wrapsGivenApi
+provideStockDao_delegatesToDatabase
 ```
 
 ---
@@ -974,10 +1020,10 @@ Instrumented tests (`connectedDebugAndroidTest`) are not *run* in this workflow,
 emulators in CI add meaningful setup and boot-time complexity and are planned as a separate workflow
 rather than blocking every push. `test-build` does compile them (`assembleDebugAndroidTest`),
 though — the `androidTest` source set (e.g. `StockDaoTest`, `StockListEspressoTest`,
-`MarketSummaryBarTest`, `StockListMixedComposeEspressoTest`) isn't touched by `test` (JVM-only),
-`lint`, or `assembleDebug`, so without this step a production API change could silently break an
-instrumentation test with no CI job noticing until someone happens to run it against a real
-device.
+`MarketSummaryBarTest`, `StockListMixedComposeEspressoTest`, `StockViewHolderTest`) isn't touched by
+`test` (JVM-only), `lint`, or `assembleDebug`, so without this step a production API change could
+silently break an instrumentation test with no CI job noticing until someone happens to run it
+against a real device.
 
 ---
 
@@ -1088,8 +1134,22 @@ Generate JVM unit-test coverage for every module at once:
   :feature:stocklist:createDebugUnitTestCoverageReport
 ```
 
-Run Room instrumentation tests, including the schema migration test and the Compose UI test for
-`MarketSummaryBar` (requires a running emulator or physical device):
+Generate a single local dashboard combining all five modules' coverage into one HTML page
+(`build/reports/coverage-aggregate/index.html`), including a per-module breakdown printed to the
+console — this already depends on the five tasks above, so it can be run on its own:
+
+```bash
+./gradlew aggregateCoverageReport
+```
+
+This is a raw JaCoCo aggregate for local diagnosis only. It intentionally does not apply
+`codecov.yml`'s `ignore` rules, so it will not exactly match the percentage Codecov reports on a PR
+check — treat Codecov as the source of truth for the official coverage number, and this dashboard
+as a way to quickly find which module/file to look at next.
+
+Run Room instrumentation tests, including the schema migration test, the Compose UI test for
+`MarketSummaryBar`, and the `StockViewHolder` binding test (requires a running emulator or physical
+device):
 
 ```bash
 ./gradlew :feature:stocklist:connectedDebugAndroidTest
@@ -1160,7 +1220,9 @@ taiwan-stock-lab-android/
 │       │   └── AndroidManifest.xml
 │       ├── test/
 │       │   └── java/com/sun/taiwan_stock_lab_android/di/
-│       │       └── TwseNetworkModuleTest.kt
+│       │       ├── TwseNetworkModuleTest.kt
+│       │       ├── StockRepositoryModuleTest.kt
+│       │       └── DatabaseModuleTest.kt
 │       └── androidTest/
 │           └── java/com/sun/taiwan_stock_lab_android/
 │               ├── HiltTestRunner.kt
@@ -1252,6 +1314,8 @@ taiwan-stock-lab-android/
 │           │   │       └── dto/
 │           │   │           └── DtoJsonAdapterTest.kt
 │           │   └── presentation/
+│           │       ├── adapter/
+│           │       │   └── RecyclerViewSanityTest.kt
 │           │       └── model/
 │           │           └── MarketSummaryTest.kt
 │           └── androidTest/
@@ -1259,8 +1323,11 @@ taiwan-stock-lab-android/
 │                   ├── data/local/
 │                   │   ├── StockDaoTest.kt
 │                   │   └── StockDatabaseMigrationTest.kt
-│                   └── presentation/compose/
-│                       └── MarketSummaryBarTest.kt
+│                   └── presentation/
+│                       ├── adapter/
+│                       │   └── StockViewHolderTest.kt
+│                       └── compose/
+│                           └── MarketSummaryBarTest.kt
 │
 ├── config/
 │   └── detekt/
@@ -1320,6 +1387,13 @@ This project demonstrates Android engineering practices such as:
   honestly to what CI actually executes (JVM tests only, not instrumented tests), with generated
   annotation-processor code explicitly excluded from the reported percentage via `codecov.yml`
   rather than left to silently deflate it
+- a local, project-wide JaCoCo coverage dashboard for fast diagnosis between CI runs, kept
+  explicitly separate from the Codecov-reported percentage rather than presented as an equivalent
+  number
+- deliberately routing a test around a known third-party testing-framework limitation
+  (`RecyclerView.Adapter` under Robolectric) to an instrumented test instead, with the limitation
+  itself isolated and documented via a minimal reproduction, rather than leaving the affected
+  production logic untested
 - repository-wide code-style enforcement
 - static-analysis rule governance
 - zero-baseline static analysis
