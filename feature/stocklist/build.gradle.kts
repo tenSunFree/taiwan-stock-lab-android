@@ -25,6 +25,13 @@ android {
         viewBinding = true
         compose = true
     }
+    testOptions {
+        unitTests {
+            // Required for Robolectric to inflate real layouts (ItemStockCardBinding) and
+            // resolve real resources (colors, strings) instead of throwing/returning stubs.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 room3 {
@@ -59,6 +66,11 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.androidx.paging.testing)
+    // Robolectric tests use the JUnit4 @RunWith API; the vintage engine lets those run
+    // side-by-side with the JUnit5 tests above under the same useJUnitPlatform() setup.
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testRuntimeOnly(libs.junit.vintage.engine)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room3.testing)
