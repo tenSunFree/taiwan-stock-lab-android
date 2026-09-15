@@ -263,8 +263,11 @@ jobs:
 
   secret-scan:
     name: Secret Scan
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # Intentionally NOT gated on `needs: changes` / `outputs.code` like the two jobs above.
+    # Gitleaks scans commit history for leaked secrets — that risk isn't limited to source code;
+    # a credential could just as easily be pasted into README.md or any other doc file. Skipping
+    # this scan for docs-only changes would open exactly the kind of gap this job exists to close,
+    # and the scan itself is cheap enough that there's no real cost to always running it.
     runs-on: ubuntu-latest
     permissions:
       contents: read
