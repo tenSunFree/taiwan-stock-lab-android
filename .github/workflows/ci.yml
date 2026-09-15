@@ -4,17 +4,9 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
 
 permissions:
   contents: read
@@ -24,8 +16,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Detects whether this push/PR touches anything besides documentation
+  # (**.md, docs/**, .gitignore). The three jobs below all `needs: changes` and
+  # gate on `outputs.code`, rather than filtering at the workflow trigger level
+  # with `paths-ignore` — a `paths-ignore`'d workflow doesn't run *at all* for a
+  # docs-only change, which leaves any required status check depending on it
+  # permanently stuck on "Expected — waiting for status to be reported" (GitHub
+  # never gets a status to report). A job skipped via `if:` still reports a
+  # "skipped" conclusion, which branch protection accepts as passing for a
+  # required check, so this achieves the same "don't waste CI on doc changes"
+  # goal without ever leaving a required check with no result at all.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Filter changed paths
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.gitignore'
+
   static-analysis:
     name: Static Analysis (ktlint & detekt)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,6 +122,8 @@ jobs:
 
   test-build:
     name: Test, Lint & Build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -165,7 +195,7 @@ jobs:
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: core/common/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          files: core/common/build/reports/jacoco/test/jacocoTestReport.xml
           disable_search: true
           flags: core-common
           fail_ci_if_error: false
@@ -233,6 +263,11 @@ jobs:
 
   secret-scan:
     name: Secret Scan
+    # Intentionally NOT gated on `needs: changes` / `outputs.code` like the two jobs above.
+    # Gitleaks scans commit history for leaked secrets — that risk isn't limited to source code;
+    # a credential could just as easily be pasted into README.md or any other doc file. Skipping
+    # this scan for docs-only changes would open exactly the kind of gap this job exists to close,
+    # and the scan itself is cheap enough that there's no real cost to always running it.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -241,11 +276,6 @@ jobs:
       # fetch-depth: 0 is required here — gitleaks-action scans commit history via `git log`, and
       # the default shallow (depth-1) checkout would only expose the single triggering commit,
       # silently turning this into a scan of almost nothing.
-      #
-      # Still pinned to v4 here for consistency with the other two jobs above, even though
-      # gitleaks-action@v3's own docs recommend actions/checkout@v6 for Node 24 alignment ahead
-      # of GitHub's Sept 16, 2026 Node 20 removal. Bumping checkout across the whole workflow is
-      # a separate, repo-wide follow-up rather than a one-off version in a single job.
       - name: Checkout full history
         uses: actions/checkout@v4
         with:
